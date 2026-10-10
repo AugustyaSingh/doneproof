@@ -8,6 +8,11 @@ def verify_task(task: dict[str, Any], base_dir: str | Path = ".") -> dict[str, A
         raise ValueError("task must be an object with a non-empty task_id")
 
     root = Path(base_dir).resolve()
+    checks = []
+
+    required_files = task.get("required_files", [])
+    if not isinstance(required_files, list):
+        raise ValueError("required_files must be a list of strings")
     checks: list[dict[str, Any]] = []
     required_files = task.get("required_files", [])
     command_results = task.get("command_results", [])
@@ -28,6 +33,13 @@ def verify_task(task: dict[str, Any], base_dir: str | Path = ".") -> dict[str, A
         checks.append({"check": f"file_exists:{item}", "passed": exists,
                        "evidence": "File exists" if exists else "File not found"})
 
+    command_results = task.get("command_results", [])
+    if not isinstance(command_results, list):
+        raise ValueError("command_results must be a list of objects")
+
+    for result in command_results:
+        if not isinstance(result, dict) or "exit_code" not in result:
+            raise ValueError("command_results entries require an exit_code")
     for result in command_results:
         if not isinstance(result, dict) or not isinstance(result.get("exit_code"), int):
             raise ValueError("command_results entries require an integer exit_code")
