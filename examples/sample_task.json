@@ -1,0 +1,12 @@
+{
+  "task_id": "sample-fix",
+  "agent_claim": "All tests pass and the fix is complete.",
+  "required_files": ["README.md", "doneproof/verifier.py", "missing_expected_test.py"],
+  "command_results": [
+    {
+      "label": "unit tests",
+      "exit_code": 1,
+      "summary": "2 passed, 1 failed: regression test did not pass"
+    }
+  ]
+}
