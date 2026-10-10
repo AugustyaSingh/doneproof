@@ -14,7 +14,11 @@ def verify_task(task: dict[str, Any], base_dir: str | Path = ".") -> dict[str, A
     root = Path(base_dir).resolve()
     checks = []
 
-    for item in task.get("required_files", []):
+    required_files = task.get("required_files", [])
+    if not isinstance(required_files, list):
+        raise ValueError("required_files must be a list of strings")
+
+    for item in required_files:
         if not isinstance(item, str) or not item.strip():
             raise ValueError("required_files entries must be non-empty strings")
         candidate = (root / item).resolve()
@@ -33,7 +37,11 @@ def verify_task(task: dict[str, Any], base_dir: str | Path = ".") -> dict[str, A
             "evidence": "File exists" if exists else "File not found"
         })
 
-    for result in task.get("command_results", []):
+    command_results = task.get("command_results", [])
+    if not isinstance(command_results, list):
+        raise ValueError("command_results must be a list of objects")
+
+    for result in command_results:
         if not isinstance(result, dict) or "exit_code" not in result:
             raise ValueError("command_results entries require an exit_code")
         label = str(result.get("label", "unnamed command"))

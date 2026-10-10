@@ -41,6 +41,14 @@ class VerifyTaskTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             verify_task({})
 
+    def test_rejects_non_list_required_files(self):
+        with self.assertRaises(ValueError):
+            verify_task({"task_id": "bad-files", "required_files": "not-a-list"})
+
+    def test_rejects_non_list_command_results(self):
+        with self.assertRaises(ValueError):
+            verify_task({"task_id": "bad-cmds", "command_results": "not-a-list"})
+
 
 if __name__ == "__main__":
     unittest.main()
