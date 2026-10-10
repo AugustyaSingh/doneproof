@@ -2,38 +2,9 @@
 
 **Evidence-based verification for AI agent task completion.**
 
-AI agents can report success even when a task is incomplete. DoneProof is an open-source prototype that checks task requirements against observable evidence instead of trusting an agent's final message.
+DoneProof checks explicit task requirements against observable evidence rather than trusting an agent's final message.
 
-> **Current status:** Early prototype. The included verifier checks explicit, machine-verifiable conditions. It does not prove arbitrary tasks are complete and does not use an LLM yet.
-
-## Problem
-
-Agent responses are not proof. A tool call may fail, a test may fail, or a requested file may never be created. DoneProof separates an agent's claim from independent checks.
-
-## MVP
-
-- Define a task as explicit verification requirements.
-- Check whether required files exist.
-- Check command/test results using their exit codes.
-- Produce a JSON report with `VERIFIED`, `PARTIAL`, or `FAILED`.
-- Keep the checks deterministic and the evidence inspectable.
-
-## Architecture
-
-```text
-Task requirements (JSON)
-          |
-          v
-   Verification engine
-     /           \
-File checks   Recorded command results
-     \           /
-          v
- Evidence-backed report (JSON)
-          |
-          v
-  Dashboard / agent adapters (planned)
-```
+> **Status:** Early working prototype. The current verifier checks required files and recorded command results. It does not yet integrate Gemma or execute commands itself.
 
 ## Quick start
 
@@ -44,48 +15,36 @@ python -m unittest discover -s tests -v
 python -m doneproof examples/sample_task.json
 ```
 
-No external services or API keys are required for the prototype.
+The sample task intentionally includes a failed command result. The CLI prints an evidence report and exits non-zero unless all specified checks pass.
 
-## Example output
+## How it works
 
-The sample task deliberately includes a failed test result. DoneProof should not mark the task as verified just because an agent claims it succeeded.
+1. A task contract lists required files and recorded command results.
+2. The verifier checks each condition independently of the agent's claim.
+3. The report shows per-check evidence and an aggregate status:
+   - `VERIFIED`: every specified check passed.
+   - `PARTIAL`: some checks passed, some failed, or no checks were supplied.
+   - `FAILED`: checks were supplied and none passed.
+4. `VERIFIED` applies only to the listed checks; it is not a guarantee of overall correctness.
 
-```json
-{
-  "task_id": "sample-fix",
-  "agent_claim": "All tests pass and the fix is complete.",
-  "status": "FAILED",
-  "checks_passed": 1,
-  "checks_failed": 1
-}
-```
+## Project plan
 
-The exact report includes evidence and a result for each check.
-
-## Roadmap
-
-- [x] Initial deterministic verification engine
-- [x] File-existence checks
-- [x] Recorded command-result checks
-- [x] JSON evidence report
+- [x] Deterministic file and recorded command-result checks
+- [x] JSON evidence reports and CLI
+- [x] Unit tests and GitHub Actions CI
 - [ ] Git diff and repository-state checks
-- [ ] Safe test-command runner with timeouts and sandboxing
+- [ ] Safe, sandboxed test execution
 - [ ] FastAPI endpoint and web dashboard
-- [ ] Agent adapters and trace capture
-- [ ] Gemma integration for translating natural-language goals into proposed checks
-- [ ] Evaluation benchmark with reproducible successful and failed tasks
+- [ ] Gemma-powered suggestions for verification plans
+- [ ] Evaluation benchmark for agent tasks
 
-## Design principles
+## Safety and limitations
 
-1. **Evidence over claims:** never accept an agent's self-reported success as proof.
-2. **Deterministic checks first:** use tests, exit codes, file state and diffs where possible.
-3. **Explicit uncertainty:** unverified requirements must remain unverified.
-4. **Human oversight:** results support review; they are not guarantees of correctness.
-5. **Safe by default:** this starter does not execute arbitrary commands from task JSON.
+The prototype does not execute commands from task files. Recorded command results are supplied evidence; future adapters must capture them from trusted execution. A passing result is not proof beyond the checks listed.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Please open an issue before substantial work and use a branch and pull request.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Please open an issue before substantial changes and use branches and pull requests.
 
 ## License
 
