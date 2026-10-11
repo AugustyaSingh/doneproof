@@ -1,309 +1,165 @@
+"""HTTP boundary tests for DoneProof's local API."""
+from __future__ import annotations
+
+import json
+import io
 import os
-from pathlib import Path
+import subprocess
 import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import Mock, patch
 
-try:
-    from fastapi.testclient import TestClient
-    from doneproof.api import app, get_workspace_root, validate_workspace_dir, get_allowed_origins
-    FASTAPI_AVAILABLE = True
-except (ImportError, RuntimeError):
-    FASTAPI_AVAILABLE = False
-    TestClient = None
-    app = None
-    get_workspace_root = None
-    validate_workspace_dir = None
-    get_allowed_origins = None
+from doneproof import api
 
 
-@unittest.skipUnless(FASTAPI_AVAILABLE, "fastapi or httpx is not installed")
-class DoneProofApiTests(unittest.TestCase):
+class DoneProofAPITests(unittest.TestCase):
     def setUp(self):
-        self.client = TestClient(app)
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name).resolve()
 
-    def test_health_check(self):
-        response = self.client.get("/api/health")
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_health_reports_service_ready(self):
+        health = api.health()
+        self.assertEqual(health["status"], "ok")
+        self.assertEqual(health["service"], "doneproof")
+        self.assertIsInstance(health["gemma_configured"], bool)
+        self.assertTrue(health["gemma_model"])
+
+    def test_cors_middleware_is_local_only_and_disables_credentials(self):
+        cors = next(item for item in api.app.user_middleware if item.cls.__name__ == "CORSMiddleware")
+        self.assertIn("http://127.0.0.1:8000", cors.kwargs["allow_origins"])
+        self.assertIn("http://localhost:5173", cors.kwargs["allow_origins"])
+        self.assertFalse(cors.kwargs["allow_credentials"])
+
+    def test_cors_origins_can_be_configured(self):
+        with patch.dict(os.environ, {"DONEPROOF_ALLOWED_ORIGINS": "http://app.local:3000, http://test.local:5000"}):
+            self.assertEqual(api.get_allowed_origins(), ["http://app.local:3000", "http://test.local:5000"])
+
+    def test_legacy_workspace_helpers_preserve_the_boundary(self):
+        with patch.object(api, "workspace_root", return_value=self.root):
+            self.assertEqual(api.get_workspace_root(), self.root)
+            self.assertEqual(api.validate_workspace_dir(".", workspace_root=self.root), self.root)
+            with self.assertRaisesRegex(ValueError, "outside the approved workspace"):
+                api.validate_workspace_dir("..", workspace_root=self.root)
+
+    def test_parse_contract_body_accepts_wrapper_and_direct_forms(self):
+        task = {"task_id": "api-contract", "checks": []}
+        wrapped, error = api._parse_contract_body(json.dumps({"task": task, "base_dir": "."}).encode())
+        direct, direct_error = api._parse_contract_body(json.dumps(task).encode())
+        self.assertIsNone(error)
+        self.assertIsNone(direct_error)
+        self.assertEqual(wrapped, {"task": task, "base_dir": "."})
+        self.assertEqual(direct, {"task": task, "base_dir": "."})
+
+    def test_parse_contract_body_rejects_invalid_json_and_non_objects(self):
+        invalid_json, invalid_error = api._parse_contract_body(b"{broken")
+        non_object, object_error = api._parse_contract_body(b'["not", "a", "contract"]')
+        non_object_task, task_error = api._parse_contract_body(b'{"task":[] }')
+        self.assertIsNone(invalid_json)
+        self.assertEqual(invalid_error.status_code, 400)
+        self.assertIsNone(non_object)
+        self.assertEqual(object_error.status_code, 400)
+        self.assertIsNone(non_object_task)
+        self.assertEqual(task_error.status_code, 400)
+
+    def test_parse_plan_request_requires_task_and_string_context(self):
+        valid, error = api._parse_plan_request(json.dumps({
+            "task_description": "Verify an artifact", "project_context": "It is a JSON file.",
+        }).encode())
+        missing, missing_error = api._parse_plan_request(b'{"project_context":"context"}')
+        invalid_context, context_error = api._parse_plan_request(b'{"task_description":"task","project_context":[]}')
+        self.assertEqual(valid, {"task_description": "Verify an artifact", "project_context": "It is a JSON file.", "base_dir": "."})
+        self.assertIsNone(error)
+        self.assertIsNone(missing)
+        self.assertEqual(missing_error.status_code, 400)
+        self.assertIsNone(invalid_context)
+        self.assertEqual(context_error.status_code, 400)
+
+    def test_plan_request_has_a_separate_small_body_limit(self):
+        oversized = api._request_size_error(str(api.MAX_PLAN_REQUEST_BYTES + 1), limit=api.MAX_PLAN_REQUEST_BYTES)
+        self.assertEqual(oversized.status_code, 413)
+
+    def test_request_size_limit_handles_content_length(self):
+        no_length = api._request_size_error(None)
+        bad_length = api._request_size_error("many")
+        oversized = api._request_size_error(str(api.MAX_CONTRACT_BYTES + 1))
+        oversized_stream = api._request_size_error(body_size=api.MAX_CONTRACT_BYTES + 1)
+        self.assertIsNone(no_length)
+        self.assertEqual(bad_length.status_code, 400)
+        self.assertEqual(oversized.status_code, 413)
+        self.assertEqual(oversized_stream.status_code, 413)
+
+    def test_resolve_workspace_rejects_paths_outside_approved_root(self):
+        outside = self.root.parent / "outside-doneproof-workspace"
+        with patch.object(api, "workspace_root", return_value=self.root):
+            with self.assertRaisesRegex(ValueError, "approved workspace"):
+                api.resolve_workspace(outside)
+
+    def test_samples_returns_only_valid_example_contracts(self):
+        samples = api.samples()
+        self.assertTrue(samples)
+        self.assertTrue(all(isinstance(item.get("task_id"), str) for item in samples.values()))
+
+    def test_approved_checks_follow_the_selected_workspace(self):
+        project = self.root / "nested-project"
+        (project / "tests").mkdir(parents=True)
+        with patch.object(api, "workspace_root", return_value=self.root):
+            available = api.approved_checks("nested-project")
+        self.assertEqual([item["id"] for item in available["checks"]], ["python-unittest"])
+        with patch.object(api, "workspace_root", return_value=self.root):
+            absent = api.approved_checks(".")
+        self.assertEqual(absent["checks"], [])
+
+    def test_approved_check_runs_only_registered_fixed_command(self):
+        (self.root / "tests").mkdir()
+        process = Mock()
+        process.stdout = io.BytesIO(b"2 tests passed")
+        process.wait.return_value = 0
+        with patch.object(api.subprocess, "Popen", return_value=process) as run:
+            response = api._execute_approved_check("python-unittest", self.root)
+        payload = json.loads(response.body)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"status": "ok", "service": "doneproof"})
+        self.assertEqual(payload["status"], "passed")
+        self.assertEqual(payload["exit_code"], 0)
+        self.assertIn("local_process_observation", payload["evidence_source"])
+        self.assertFalse(run.call_args.kwargs["shell"])
+        self.assertIs(run.call_args.kwargs["stdout"], subprocess.PIPE)
+        self.assertIs(run.call_args.kwargs["stderr"], subprocess.STDOUT)
+        self.assertEqual(run.call_args.args[0], api.APPROVED_CHECKS["python-unittest"]["argv"])
 
-    def test_samples_endpoint(self):
-        response = self.client.get("/api/samples")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("pass", data)
-        self.assertIn("partial", data)
-        self.assertIn("fail", data)
-
-    def test_index_dashboard_served(self):
-        response = self.client.get("/")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("text/html", response.headers.get("content-type", ""))
-        self.assertIn("DoneProof", response.text)
-
-    def test_verify_direct_passing_payload(self):
-        payload = {
-            "task_id": "direct-pass",
-            "agent_claim": "README exists and tests pass",
-            "required_files": ["README.md"],
-            "command_results": [{"label": "test", "exit_code": 0}],
-        }
-        response = self.client.post("/verify", json=payload)
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["task_id"], "direct-pass")
-        self.assertEqual(data["status"], "VERIFIED")
-        self.assertEqual(data["checks_passed"], 2)
-        self.assertEqual(data["checks_failed"], 0)
-
-    def test_verify_wrapped_task_payload(self):
-        payload = {
-            "task": {
-                "task_id": "wrapped-pass",
-                "agent_claim": "README exists",
-                "required_files": ["README.md"],
-                "command_results": [],
-            },
-            "base_dir": ".",
-        }
-        response = self.client.post("/verify", json=payload)
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["task_id"], "wrapped-pass")
-        self.assertEqual(data["status"], "VERIFIED")
-
-    def test_verify_partial_payload(self):
-        payload = {
-            "task_id": "partial-task",
-            "required_files": ["README.md", "non_existent_file_xyz.txt"],
-        }
-        response = self.client.post("/verify", json=payload)
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["status"], "PARTIAL")
-        self.assertEqual(data["checks_passed"], 1)
-        self.assertEqual(data["checks_failed"], 1)
-
-    def test_verify_failed_payload(self):
-        payload = {
-            "task_id": "fail-task",
-            "command_results": [{"label": "test", "exit_code": 1}],
-        }
-        response = self.client.post("/verify", json=payload)
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["status"], "FAILED")
-        self.assertEqual(data["checks_passed"], 0)
-        self.assertEqual(data["checks_failed"], 1)
-
-    def test_verify_missing_task_id_returns_400(self):
-        response = self.client.post("/verify", json={})
+    def test_approved_check_rejects_unknown_command_without_execution(self):
+        with patch.object(api.subprocess, "Popen") as run:
+            response = api._execute_approved_check("model-supplied-command", self.root)
         self.assertEqual(response.status_code, 400)
-        data = response.json()
-        self.assertIn("task must be an object with a non-empty task_id", data["detail"])
+        run.assert_not_called()
 
-    def test_verify_invalid_required_files_returns_400(self):
-        payload = {"task_id": "test", "required_files": "not-a-list"}
-        response = self.client.post("/verify", json=payload)
-        self.assertEqual(response.status_code, 400)
-        data = response.json()
-        self.assertIn("required_files must be a list of strings", data["detail"])
-
-    def test_verify_invalid_command_results_returns_400(self):
-        payload = {"task_id": "test", "command_results": [{"exit_code": "non-int"}]}
-        response = self.client.post("/verify", json=payload)
-        self.assertEqual(response.status_code, 400)
-        data = response.json()
-        self.assertIn("command_results", data["detail"])
-
-    def test_verify_non_dict_body_returns_400(self):
-        response = self.client.post("/verify", json="plain-string")
-        self.assertEqual(response.status_code, 400)
-        data = response.json()
-        self.assertIn("error", data)
-
-    def test_verify_outside_workspace_parent_traversal_returns_400(self):
-        payload = {
-            "task": {"task_id": "traversal-test", "required_files": ["README.md"]},
-            "base_dir": "..",
-        }
-        response = self.client.post("/verify", json=payload)
-        self.assertEqual(response.status_code, 400)
-        data = response.json()
-        self.assertIn("outside the approved workspace root", data["detail"])
-
-    def test_verify_outside_workspace_nested_traversal_returns_400(self):
-        payload = {
-            "task": {"task_id": "traversal-test", "required_files": ["README.md"]},
-            "base_dir": "docs/../../..",
-        }
-        response = self.client.post("/verify", json=payload)
-        self.assertEqual(response.status_code, 400)
-        data = response.json()
-        self.assertIn("outside the approved workspace root", data["detail"])
-
-    def test_verify_outside_workspace_absolute_path_returns_400(self):
-        ext_dir = "/etc" if os.path.exists("/etc") else "/var"
-        payload = {
-            "task": {"task_id": "external-probe", "required_files": ["passwd"]},
-            "base_dir": ext_dir,
-        }
-        response = self.client.post("/verify", json=payload)
-        self.assertEqual(response.status_code, 400)
-        data = response.json()
-        self.assertIn("outside the approved workspace root", data["detail"])
-
-    def test_verify_direct_payload_with_forbidden_base_dir_returns_400(self):
-        payload = {
-            "task_id": "direct-forbidden",
-            "required_files": ["passwd"],
-            "base_dir": "..",
-        }
-        response = self.client.post("/verify", json=payload)
-        self.assertEqual(response.status_code, 400)
-        data = response.json()
-        self.assertIn("outside the approved workspace root", data["detail"])
-
-    def test_verify_permitted_relative_subdirectory(self):
-        payload = {
-            "task": {
-                "task_id": "subdir-pass",
-                "required_files": ["api.py"],
-            },
-            "base_dir": "doneproof",
-        }
-        response = self.client.post("/verify", json=payload)
+    def test_approved_check_timeout_is_not_reported_as_pass(self):
+        (self.root / "tests").mkdir()
+        process = Mock()
+        process.stdout = io.BytesIO(b"partial output")
+        process.wait.side_effect = [subprocess.TimeoutExpired("test", 60), -9]
+        with patch.object(api.subprocess, "Popen", return_value=process):
+            response = api._execute_approved_check("python-unittest", self.root)
+        payload = json.loads(response.body)
         self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["status"], "VERIFIED")
-        self.assertEqual(data["checks"][0]["passed"], True)
+        self.assertEqual(payload["status"], "errored")
+        self.assertTrue(payload["timed_out"])
+        self.assertIsNone(payload["exit_code"])
+        process.kill.assert_called_once()
 
-    def test_verify_permitted_absolute_path_inside_workspace(self):
-        abs_sub = str(Path.cwd().resolve() / "doneproof")
-        payload = {
-            "task": {
-                "task_id": "abs-pass",
-                "required_files": ["api.py"],
-            },
-            "base_dir": abs_sub,
-        }
-        response = self.client.post("/verify", json=payload)
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["status"], "VERIFIED")
-
-    def test_verify_base_dir_pointing_to_file_returns_400(self):
-        payload = {
-            "task": {"task_id": "file-base-dir", "required_files": []},
-            "base_dir": "README.md",
-        }
-        response = self.client.post("/verify", json=payload)
-        self.assertEqual(response.status_code, 400)
-        data = response.json()
-        self.assertIn("file, not a directory", data["detail"])
-
-    def test_verify_invalid_base_dir_type_returns_400(self):
-        payload = {
-            "task": {"task_id": "bad-type", "required_files": []},
-            "base_dir": 12345,
-        }
-        response = self.client.post("/verify", json=payload)
-        self.assertEqual(response.status_code, 400)
-        data = response.json()
-        self.assertIn("base_dir must be a string path", data["detail"])
-
-    def test_custom_workspace_root_via_env_var(self):
-        with tempfile.TemporaryDirectory() as custom_root:
-            Path(custom_root, "evidence.txt").write_text("ok", encoding="utf-8")
-            orig_env = os.environ.get("DONEPROOF_WORKSPACE_ROOT")
-            os.environ["DONEPROOF_WORKSPACE_ROOT"] = custom_root
-            try:
-                # Inside custom root is permitted
-                payload_valid = {
-                    "task": {"task_id": "custom-ok", "required_files": ["evidence.txt"]},
-                    "base_dir": ".",
-                }
-                res_valid = self.client.post("/verify", json=payload_valid)
-                self.assertEqual(res_valid.status_code, 200)
-                self.assertEqual(res_valid.json()["status"], "VERIFIED")
-
-                # Outside custom root is rejected
-                res_outside = self.client.post(
-                    "/verify",
-                    json={"task": {"task_id": "custom-fail"}, "base_dir": ".."},
-                )
-                self.assertEqual(res_outside.status_code, 400)
-            finally:
-                if orig_env is None:
-                    os.environ.pop("DONEPROOF_WORKSPACE_ROOT", None)
-                else:
-                    os.environ["DONEPROOF_WORKSPACE_ROOT"] = orig_env
-
-    def test_validate_workspace_dir_helper_unit_tests(self):
-        with tempfile.TemporaryDirectory() as root_str:
-            root = Path(root_str).resolve()
-            sub = root / "sub"
-            sub.mkdir()
-
-            # Root itself is valid
-            self.assertEqual(validate_workspace_dir(".", workspace_root=root), root)
-            self.assertEqual(validate_workspace_dir(root_str, workspace_root=root), root)
-
-            # Subdirectory is valid
-            self.assertEqual(validate_workspace_dir("sub", workspace_root=root), sub)
-            self.assertEqual(validate_workspace_dir(str(sub), workspace_root=root), sub)
-
-            # Traversal is rejected
-            with self.assertRaises(ValueError) as ctx:
-                validate_workspace_dir("..", workspace_root=root)
-            self.assertIn("outside the approved workspace root", str(ctx.exception))
-
-            with self.assertRaises(ValueError) as ctx:
-                validate_workspace_dir(root.parent, workspace_root=root)
-            self.assertIn("outside the approved workspace root", str(ctx.exception))
-
-    def test_cors_allowed_local_origin(self):
-        response = self.client.get("/api/health", headers={"Origin": "http://127.0.0.1:8000"})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.headers.get("access-control-allow-origin"), "http://127.0.0.1:8000")
-        self.assertNotEqual(response.headers.get("access-control-allow-credentials"), "true")
-
-    def test_cors_disallowed_external_origin(self):
-        response = self.client.get("/api/health", headers={"Origin": "https://malicious-external-site.com"})
-        self.assertEqual(response.status_code, 200)
-        self.assertIsNone(response.headers.get("access-control-allow-origin"))
-
-    def test_cors_preflight_allowed(self):
-        headers = {
-            "Origin": "http://localhost:8000",
-            "Access-Control-Request-Method": "POST",
-            "Access-Control-Request-Headers": "Content-Type",
-        }
-        response = self.client.options("/verify", headers=headers)
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.headers.get("access-control-allow-origin"), "http://localhost:8000")
-        self.assertNotEqual(response.headers.get("access-control-allow-credentials"), "true")
-
-    def test_cors_preflight_disallowed(self):
-        headers = {
-            "Origin": "https://evil.example.com",
-            "Access-Control-Request-Method": "POST",
-            "Access-Control-Request-Headers": "Content-Type",
-        }
-        response = self.client.options("/verify", headers=headers)
-        self.assertNotEqual(response.headers.get("access-control-allow-origin"), "https://evil.example.com")
-
-    def test_get_allowed_origins_env_override(self):
-        orig_env = os.environ.get("DONEPROOF_ALLOWED_ORIGINS")
-        try:
-            os.environ["DONEPROOF_ALLOWED_ORIGINS"] = "http://app.local:3000, http://test.local:5000 "
-            origins = get_allowed_origins()
-            self.assertEqual(origins, ["http://app.local:3000", "http://test.local:5000"])
-        finally:
-            if orig_env is None:
-                os.environ.pop("DONEPROOF_ALLOWED_ORIGINS", None)
-            else:
-                os.environ["DONEPROOF_ALLOWED_ORIGINS"] = orig_env
-
+    def test_approved_check_keeps_only_a_bounded_output_tail(self):
+        (self.root / "tests").mkdir()
+        process = Mock()
+        process.stdout = io.BytesIO(b"x" * (api.MAX_APPROVED_CHECK_OUTPUT + 32) + b"TAIL")
+        process.wait.return_value = 0
+        with patch.object(api.subprocess, "Popen", return_value=process):
+            response = api._execute_approved_check("python-unittest", self.root)
+        payload = json.loads(response.body)
+        self.assertLessEqual(len(payload["output"].encode()), api.MAX_APPROVED_CHECK_OUTPUT)
+        self.assertTrue(payload["output"].endswith("TAIL"))
 
 if __name__ == "__main__":
     unittest.main()

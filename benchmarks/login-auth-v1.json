@@ -1,0 +1,33 @@
+{
+  "corpus_version": "doneproof-benchmark-corpus.v1",
+  "benchmark_id": "doneproof-login-gemma-live-v1",
+  "fixture_id": "login-auth-v1",
+  "task": {
+    "task_id": "login-authentication-behavior",
+    "description": "Verify an authentication change: active users with the correct credentials must log in; incorrect or empty passwords, unknown users, and inactive accounts must be rejected.",
+    "project_context": "The controlled login-auth-v1 fixture implements login(username, password, account_active). Its trusted oracle and seeded faulty implementations are defined in doneproof/login_fixture.py. A verification check selects one documented behavioral scenario; no generated code or command is run."
+  },
+  "oracle": {
+    "baseline_implementation": "correct",
+    "faulty_implementations": [
+      "rejects_valid_login",
+      "accepts_wrong_password",
+      "accepts_empty_password",
+      "allows_inactive_account"
+    ],
+    "scenario_labels_source": "doneproof/login_fixture.py: SCENARIOS and login_correct",
+    "expected_scenarios": [
+      {"scenario_id": "valid_credentials", "expected_success": true},
+      {"scenario_id": "wrong_password", "expected_success": false},
+      {"scenario_id": "empty_password", "expected_success": false},
+      {"scenario_id": "inactive_account", "expected_success": false},
+      {"scenario_id": "unknown_user", "expected_success": false}
+    ],
+    "label_protocol": "Each scenario's expected_success field is the independently reviewed contract. A mutant is killed when its boolean result differs from that oracle for at least one selected scenario."
+  },
+  "evaluation_limits": [
+    "One toy authentication fixture only.",
+    "Seeded faults are controlled behavioral mutations, not a representative sample of production defects.",
+    "Reference labels must be reviewed independently before making quality claims."
+  ]
+}

@@ -1,7 +1,8 @@
 {
   "task_id": "sample-fix",
+  "task_description": "Review this claimed fix: the verifier and a regression test should exist, and the test-run result must be represented honestly.",
   "agent_claim": "All tests pass and the fix is complete.",
-  "required_files": ["README.md", "doneproof/verifier.py", "missing_expected_test.py"],
+  "required_files": ["README.md", "doneproof/verifier.py", "tests/missing_expected_test.py"],
   "command_results": [
     {
       "label": "unit tests",
