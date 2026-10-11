@@ -4,7 +4,7 @@
 
 DoneProof checks explicit task requirements against observable evidence rather than trusting an agent's final message.
 
-> **Status:** Early working prototype. The current verifier checks required files and recorded command results. It does not yet integrate Gemma or execute commands itself.
+> **Status:** Early working prototype. The current verifier checks required files and recorded command results. The optional Gemma integration proposes verification plans; the core verifier still does not execute commands itself.
 
 ## Quick start
 
@@ -35,7 +35,7 @@ The sample task intentionally includes a failed command result. The CLI prints a
 - [ ] Git diff and repository-state checks
 - [ ] Safe, sandboxed test execution
 - [ ] FastAPI endpoint and web dashboard
-- [ ] Gemma-powered suggestions for verification plans
+- [x] Optional Gemma-powered verification-plan generation
 - [ ] Evaluation benchmark for agent tasks
 
 ## Safety and limitations
@@ -49,3 +49,21 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Please open an issue before substantial 
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Gemma 4 verification-plan generation
+
+DoneProof includes an optional Gemma 4 planner that converts a task description
+into a structured list of proposed checks. It validates the model response and
+does **not** execute generated commands or treat the model's output as evidence
+that a task passed.
+
+See [Gemma integration setup](docs/GEMMA_INTEGRATION.md).
+
+```powershell
+python -m pip install -r requirements-gemma.txt
+$env:GEMINI_API_KEY = "YOUR_KEY_HERE"
+python -m doneproof.gemma_planner "Fix the login bug and ensure regression tests pass"
+```
+
+Tests are mocked and do not require an API key:
+`python -m unittest discover -s tests -v`.
