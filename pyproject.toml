@@ -1,2 +1,5 @@
+[tool.vercel]
+entrypoint = "doneproof.api:app"
+
 [tool.vercel.fastapi.static]
 cdn = true
