@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DoneProof — Deterministic Task Verifier</title>
+  <meta name="description" content="Evidence-based, deterministic verification dashboard for AI agent task completion contracts." />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════ HEADER ═══════════════════════ -->
+  <header style="height:56px; border-bottom:1px solid var(--border-subtle); background:var(--surface); display:flex; align-items:center; justify-content:space-between; padding:0 24px; position:sticky; top:0; z-index:50;">
+    <!-- Left: Brand + API Status -->
+    <div style="display:flex; align-items:center; gap:16px;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="color:var(--text-primary); font-size:13px; font-weight:600; letter-spacing:-0.01em;">■ DoneProof</span>
+      </div>
+      <div id="api-status-badge" style="display:inline-flex; align-items:center; gap:6px; padding:3px 10px; font-size:11px; font-family:'JetBrains Mono',monospace; color:var(--status-verified); background:var(--status-verified-bg); border:1px solid var(--status-verified-bdr); border-radius:var(--radius-sm);">
+        <span style="width:6px; height:6px; border-radius:50%; background:var(--status-verified); display:inline-block;"></span>
+        <span id="api-status-text">API: Connected · FastAPI</span>
+      </div>
+    </div>
+
+    <!-- Center: Nav -->
+    <nav style="display:flex; align-items:center; gap:4px;">
+      <span style="padding:6px 12px; font-size:13px; font-weight:500; color:var(--text-primary); border-bottom:2px solid var(--text-primary); cursor:default;">Verifier</span>
+    </nav>
+
+    <!-- Right: Actions -->
+    <div style="display:flex; align-items:center; gap:8px;">
+      <a href="/docs" target="_blank" rel="noopener noreferrer" class="btn-ghost" style="font-size:12px; padding:4px 10px;">Docs</a>
+      <button id="verify-btn-header" class="btn-primary" style="font-size:12px; padding:5px 14px;">
+        <span id="verify-btn-header-text">Verify Run</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════ PAGE HERO ═══════════════════════ -->
+  <div style="padding:32px 24px 0; max-width:1280px; margin:0 auto;">
+    <div style="margin-bottom:24px;">
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
+        <span class="text-mono" style="font-size:11px; letter-spacing:0.04em; text-transform:uppercase; color:var(--text-muted);">ENGINE V1.0</span>
+        <span style="color:var(--text-muted);">/</span>
+        <span style="display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--status-verified);">
+          <span style="width:6px; height:6px; border-radius:50%; background:var(--status-verified); display:inline-block;"></span>
+          Operational
+        </span>
+      </div>
+      <h1 style="font-size:36px; font-weight:600; line-height:44px; letter-spacing:-0.03em; color:var(--text-primary); margin:0 0 8px;">Deterministic Task Verifier</h1>
+      <p style="font-size:14px; color:var(--text-secondary); margin:0; max-width:600px;">Upload task.json or paste execution contract to verify against ground truth evidence in &lt;2s.</p>
+    </div>
+
+
+  </div>
+
+  <!-- ═══════════════════════ ERROR BANNER ═══════════════════════ -->
+  <div id="error-alert" class="hidden" style="max-width:1280px; margin:0 auto 16px; padding:0 24px;">
+    <div style="padding:10px 16px; border:1px solid var(--status-failed-bdr); background:var(--status-failed-bg); border-radius:var(--radius-sm); display:flex; align-items:center; gap:10px;">
+      <span style="color:var(--status-failed); font-weight:600; font-size:13px;">✕</span>
+      <div style="flex:1;">
+        <span id="error-title" style="font-weight:600; font-size:13px; color:var(--status-failed);">Verification Error</span>
+        <span style="margin-left:8px; font-size:12px; color:var(--text-secondary);" id="error-message">Invalid payload.</span>
+      </div>
+      <button id="dismiss-error-btn" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:16px; padding:4px;">✕</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════ MAIN GRID ═══════════════════════ -->
+  <main style="max-width:1280px; margin:0 auto; padding:0 24px 48px; display:grid; grid-template-columns:380px 1fr; gap:24px; align-items:start;">
+
+    <!-- ══════════ LEFT COLUMN: Input Dock ══════════ -->
+    <aside style="display:flex; flex-direction:column; gap:16px;">
+
+      <!-- Tab Bar -->
+      <div class="panel" style="padding:0;">
+        <div style="display:flex; align-items:center; border-bottom:1px solid var(--border-subtle);">
+          <button id="tab-upload-btn" class="tab-btn active" style="flex:1; justify-content:center; border-radius:var(--radius-md) var(--radius-md) 0 0; border-bottom:2px solid var(--text-primary); padding:10px 12px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Upload task.json
+          </button>
+          <button id="tab-raw-btn" class="tab-btn" style="flex:1; justify-content:center; border-radius:var(--radius-md) var(--radius-md) 0 0; padding:10px 12px;">
+            &lt;&gt; Raw JSON Payload
+          </button>
+        </div>
+
+        <!-- Load Sample link -->
+        <div style="display:flex; justify-content:flex-end; padding:8px 12px; border-bottom:1px solid var(--border-subtle);">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span class="text-mono" style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em;">Load Sample:</span>
+            <button id="load-sample-pass-btn" class="btn-ghost" style="font-size:10px; padding:2px 8px; color:var(--status-verified); border-color:var(--status-verified-bdr);">Pass</button>
+            <button id="load-sample-partial-btn" class="btn-ghost" style="font-size:10px; padding:2px 8px; color:var(--status-partial); border-color:var(--status-partial-bdr);">Partial</button>
+            <button id="load-sample-fail-btn" class="btn-ghost" style="font-size:10px; padding:2px 8px; color:var(--status-failed); border-color:var(--status-failed-bdr);">Fail</button>
+          </div>
+        </div>
+
+        <!-- Upload Dropzone (Tab 1) -->
+        <div id="tab-upload-content" style="padding:16px;">
+          <div id="file-dropzone" class="dropzone" style="padding:48px 24px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; user-select:none;">
+            <input type="file" id="file-input" accept=".json,application/json" style="display:none;" />
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" style="margin-bottom:16px;">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <p style="font-size:14px; font-weight:500; color:var(--text-primary); margin:0 0 4px;">Drag and drop <code class="text-mono" style="font-size:13px; color:var(--text-primary); background:var(--surface-l2); padding:1px 6px; border:1px solid var(--border-subtle); border-radius:3px;">task.json</code> here</p>
+            <p style="font-size:12px; color:var(--text-muted); margin:0 0 16px;">Strict JSON schema compliant · Max file size 12MB</p>
+            <button class="btn-ghost" onclick="document.getElementById('file-input').click()" style="font-size:12px; padding:5px 14px;">Browse Filesystem</button>
+          </div>
+
+          <!-- Selected file badge -->
+          <div id="selected-file-badge" class="hidden" style="margin-top:12px;">
+            <div class="file-badge" style="width:100%; justify-content:space-between;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="color:var(--status-verified);">✓</span>
+                <span id="selected-file-name" style="font-weight:500;">task.json</span>
+                <span id="selected-file-size" class="file-size"></span>
+              </div>
+              <button id="clear-file-btn" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:14px; padding:2px 4px;">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Raw JSON Editor (Tab 2 — hidden by default) -->
+        <div id="tab-raw-content" class="hidden" style="padding:16px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="text-mono" style="font-size:11px; color:var(--text-muted);">task.json</span>
+              <span id="payload-size" class="text-mono" style="font-size:10px; color:var(--text-muted);"></span>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <button id="format-json-btn" class="btn-ghost" style="font-size:10px; padding:2px 8px;">Format</button>
+              <button id="clear-json-btn" class="btn-ghost" style="font-size:10px; padding:2px 8px;">Clear</button>
+            </div>
+          </div>
+          <textarea
+            id="raw-json-textarea"
+            rows="14"
+            spellcheck="false"
+            style="width:100%; background:var(--surface-l2); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:14px; font-family:'JetBrains Mono',monospace; font-size:13px; line-height:20px; color:var(--text-primary); resize:vertical; outline:none;"
+            placeholder='{ "task_id": "...", "agent_claim": "...", "required_files": [], "command_results": [] }'
+          ></textarea>
+        </div>
+      </div>
+
+      <!-- Base Execution Directory -->
+      <div class="panel" style="padding:12px 16px;">
+        <label style="display:block; margin-bottom:6px;">
+          <span class="text-mono" style="font-size:11px; letter-spacing:0.04em; text-transform:uppercase; color:var(--text-muted);">Base Execution Directory</span>
+          <span style="font-size:11px; color:var(--text-muted); margin-left:4px;">(optional context root)</span>
+        </label>
+        <div style="display:flex; align-items:center; gap:8px; padding:6px 10px; background:var(--surface-l2); border:1px solid var(--border-subtle); border-radius:var(--radius-sm);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <input
+            type="text"
+            id="base-dir-input"
+            value="."
+            style="flex:1; background:transparent; border:none; outline:none; font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--text-primary);"
+            placeholder="."
+          />
+        </div>
+      </div>
+
+      <!-- Run Verification Button -->
+      <div style="display:flex; gap:8px;">
+        <button id="verify-btn" class="btn-primary" style="flex:1; padding:10px 16px; font-size:14px; font-weight:600;">
+          <span id="verify-btn-text">Run Verification</span>
+          <span class="kbd">⌘</span><span class="kbd">Enter</span>
+        </button>
+        <button id="verify-btn-reload" class="btn-ghost" style="padding:10px 12px;" title="Reset">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        </button>
+      </div>
+
+      <!-- Loading indicator (hidden by default) -->
+      <div id="verify-loading" class="hidden" style="text-align:center; padding:12px;">
+        <span class="text-mono" style="font-size:13px; color:var(--text-secondary);">
+          <span class="spinner-ascii"></span>
+          <span style="margin-left:8px;">Verifying...</span>
+          <span id="loading-latency" style="margin-left:4px; color:var(--text-muted);"></span>
+        </span>
+      </div>
+
+      <!-- Proof Attestation Card (Hidden until verification) -->
+      <div id="attestation-card" class="panel hidden" style="padding:16px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+          <span class="text-mono" style="font-size:11px; letter-spacing:0.04em; text-transform:uppercase; color:var(--text-muted);">Deterministic Proof Attestation</span>
+          <span class="text-mono" style="font-size:10px; color:var(--text-muted);">SHA-256</span>
+        </div>
+        <div class="attestation-row">
+          <span class="att-key">Proof Hash:</span>
+          <span id="att-hash" class="att-val" style="font-size:11px;">—</span>
+        </div>
+        <div class="attestation-row">
+          <span class="att-key">Checks Evaluated:</span>
+          <span id="att-checks-count" class="att-val">—</span>
+        </div>
+        <div class="attestation-row">
+          <span class="att-key">Schema Validator:</span>
+          <span id="att-schema" class="att-val" style="color:var(--status-verified);">Valid (v1.0)</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ══════════ RIGHT COLUMN: Results ══════════ -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+
+      <!-- Placeholder (before any verification) -->
+      <div id="results-placeholder" class="panel" style="padding:64px 32px; text-align:center;">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" style="margin:0 auto 16px; display:block;">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+        </svg>
+        <p style="font-size:14px; font-weight:500; color:var(--text-primary); margin:0 0 6px;">No Verification Run Yet</p>
+        <p style="font-size:12px; color:var(--text-muted); margin:0; max-width:320px; margin-left:auto; margin-right:auto;">Upload a <code class="text-mono" style="font-size:12px; color:var(--text-primary); background:var(--surface-l2); padding:1px 5px; border:1px solid var(--border-subtle); border-radius:3px;">task.json</code> contract or choose a preset sample to run deterministic verification.</p>
+      </div>
+
+      <!-- Results Container (Hidden until verified) -->
+      <div id="results-container" class="hidden" style="display:flex; flex-direction:column; gap:16px;">
+
+        <!-- ── Status Banner ── -->
+        <div class="panel" style="padding:20px 24px;">
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+            <div>
+              <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
+                <span id="status-badge" class="badge badge-verified">
+                  <span id="status-icon">●</span>
+                  <span id="status-text">VERIFIED</span>
+                </span>
+              </div>
+              <p id="status-headline" style="font-size:16px; font-weight:600; color:var(--text-primary); margin:0 0 4px;">Contract State Fully Deterministic</p>
+              <p id="status-subtext" style="font-size:13px; color:var(--text-secondary); margin:0;">Ground truth assertion matched agent execution evidence</p>
+            </div>
+
+            <!-- Metric boxes -->
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+              <div class="metric-box">
+                <span class="metric-label">Duration</span>
+                <span id="metric-latency" class="metric-value">—</span>
+              </div>
+              <div class="metric-box">
+                <span class="metric-label">P99 Latency</span>
+                <span id="metric-p99" class="metric-value">—</span>
+              </div>
+              <div class="metric-box">
+                <span class="metric-label">Rules Checked</span>
+                <span class="metric-value">
+                  <span id="metric-passed-checks" style="color:var(--status-verified);">0</span>/<span id="metric-total-checks">0</span>
+                </span>
+                <span style="display:block; font-size:10px; color:var(--text-muted); margin-top:1px;">Passed</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Claim vs. Reality Differential Matrix ── -->
+        <div class="panel" style="padding:20px 24px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+            <h2 style="font-size:15px; font-weight:600; color:var(--text-primary); margin:0; display:flex; align-items:center; gap:8px;">
+              ✦ Claim vs. Reality Differential Matrix
+            </h2>
+            <span id="claim-verdict-badge" class="badge badge-verified">100% Corroborated</span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <!-- Agent Claim -->
+            <div>
+              <div class="claim-card-header" style="display:flex; align-items:center; justify-content:space-between;">
+                <span>Declared Agent Claim</span>
+                <span style="font-size:10px; color:var(--text-muted); text-transform:none; letter-spacing:0;">Unverified State</span>
+              </div>
+              <div class="claim-card">
+                <p id="agent-claim-text" style="font-size:13px; color:var(--text-secondary); margin:0; line-height:20px;">"No claim recorded."</p>
+              </div>
+              <div style="margin-top:8px; font-size:10px; color:var(--text-muted);" class="text-mono">
+                Source: task_payload.agent_claim · Self-reported
+              </div>
+            </div>
+
+            <!-- Ground Truth Reality -->
+            <div>
+              <div class="claim-card-header" style="display:flex; align-items:center; justify-content:space-between;">
+                <span id="reality-header-label" style="color:var(--status-verified);">✓ Ground Truth Reality</span>
+                <span style="font-size:10px; color:var(--text-muted); text-transform:none; letter-spacing:0;">Runtime Proven</span>
+              </div>
+              <div id="reality-box" class="reality-card status-verified-accent">
+                <p id="reality-summary-text" style="font-size:13px; color:var(--text-primary); margin:0; line-height:20px; font-weight:500;">—</p>
+              </div>
+              <div style="margin-top:8px; display:flex; align-items:center; justify-content:space-between;">
+                <span class="text-mono" style="font-size:10px; color:var(--text-muted);">Trace: verifier.py → verify_task</span>
+                <span id="reality-trace-verdict" class="text-mono" style="font-size:11px; font-weight:600; color:var(--status-verified);">PASS</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Evidence Table ── -->
+        <div class="panel" style="padding:20px 24px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+            <h2 style="font-size:15px; font-weight:600; color:var(--text-primary); margin:0; display:flex; align-items:center; gap:8px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              Deterministic Verification Evidence
+            </h2>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="text-mono" style="font-size:11px; color:var(--text-muted);">Filter:</span>
+              <button id="filter-all-btn" class="filter-btn active">All (<span id="filter-count-all">0</span>)</button>
+              <button id="filter-passed-btn" class="filter-btn">Passed</button>
+              <button id="filter-failed-btn" class="filter-btn">Failed</button>
+            </div>
+          </div>
+
+          <div style="border:1px solid var(--border-subtle); border-radius:var(--radius-md); overflow:hidden;">
+            <table class="evidence-table">
+              <thead>
+                <tr>
+                  <th style="width:60px;">ID</th>
+                  <th>Type / Spec Rule</th>
+                  <th style="width:90px;">Status</th>
+                  <th>Evidence Summary</th>
+                  <th style="width:80px;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="evidence-table-body">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Table footer -->
+          <div id="evidence-footer" class="hidden" style="display:flex; align-items:center; justify-content:space-between; margin-top:12px; padding:8px 0;">
+            <span id="evidence-footer-text" class="text-mono" style="font-size:11px; color:var(--text-muted);">—</span>
+            <button id="copy-report-btn" class="btn-ghost" style="font-size:11px; padding:3px 10px;">
+              <span id="copy-report-text">View Raw Execution Trace ↗</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ── Limitations & Raw JSON ── -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+          <!-- Limitations -->
+          <div class="panel" style="padding:16px 20px;">
+            <h3 style="font-size:12px; font-weight:600; color:var(--status-partial); margin:0 0 10px; display:flex; align-items:center; gap:6px;">
+              ▲ Scope &amp; Limitations
+            </h3>
+            <ul id="limitations-list" style="margin:0; padding:0 0 0 16px; list-style:disc; font-size:12px; line-height:20px; color:var(--text-secondary);">
+              <!-- Dynamically populated -->
+            </ul>
+          </div>
+
+          <!-- Raw JSON -->
+          <div class="panel" style="padding:16px 20px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+              <h3 style="font-size:12px; font-weight:600; color:var(--text-primary); margin:0;">Raw Verification JSON</h3>
+              <button id="copy-json-btn" class="btn-ghost" style="font-size:10px; padding:2px 8px;">Copy</button>
+            </div>
+            <pre id="raw-report-view" class="panel-recessed" style="max-height:200px; overflow:auto; padding:12px; margin:0; font-size:12px; line-height:18px; color:var(--text-secondary);"></pre>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ═══════════════════════ FOOTER ═══════════════════════ -->
+  <footer style="border-top:1px solid var(--border-subtle); padding:16px 24px; display:flex; align-items:center; justify-content:space-between; max-width:1280px; margin:0 auto;">
+    <span style="font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:6px;">
+      ■ © 2025 DoneProof Engine. Zero-latency deterministic verification.
+    </span>
+    <div style="display:flex; align-items:center; gap:16px;">
+      <a href="/docs" target="_blank" rel="noopener noreferrer" style="font-size:11px; color:var(--text-muted); text-decoration:none;">FastAPI Spec</a>
+      <a href="https://github.com/AugustyaSingh/doneproof" target="_blank" rel="noopener noreferrer" style="font-size:11px; color:var(--text-muted); text-decoration:none;">CLI Docs</a>
+      <span style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:var(--status-verified);">
+        <span style="width:5px; height:5px; border-radius:50%; background:var(--status-verified); display:inline-block;"></span>
+        System Status
+      </span>
+    </div>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
