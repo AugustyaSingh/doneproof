@@ -72,19 +72,37 @@ def validate_workspace_dir(
     return candidate
 
 
+def get_allowed_origins() -> list[str]:
+    """Return the list of allowed CORS origins.
+
+    Defaults to safe local development origins (http://127.0.0.1:8000, http://localhost:8000).
+    Can be configured via the DONEPROOF_ALLOWED_ORIGINS environment variable
+    (comma-separated list, e.g. 'http://localhost:3000,http://127.0.0.1:3000').
+    """
+    raw = os.environ.get("DONEPROOF_ALLOWED_ORIGINS")
+    if raw and raw.strip():
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return [
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+    ]
+
+
 app = FastAPI(
     title="DoneProof API",
     description="Evidence-based verification API for AI agent task completion contracts",
     version="0.1.0",
 )
 
-# Phase 1: CORS Configuration
+# Phase 1: Hardened CORS Configuration
+# Credentials disabled (allow_credentials=False) as DoneProof is local-only and does not use cookies/sessions.
+# Origins restricted to local addresses by default to prevent cross-origin probing from external web pages.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=get_allowed_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
 
 

@@ -47,6 +47,7 @@ DoneProof includes a built-in FastAPI backend and minimalist web dashboard:
 - **Local Developer Trust Boundary**: The DoneProof API is designed for trusted local developer workflows (`127.0.0.1`).
 - **Approved Workspace Boundary**: The `/verify` endpoint validates that any requested `base_dir` resolves strictly within the approved workspace root (`Path.cwd()` by default, or configured via the `DONEPROOF_WORKSPACE_ROOT` environment variable).
 - **Probing Prevention**: Directory traversal (`..`) or absolute paths outside the approved workspace root (e.g. `/etc`, `/tmp`, external symlinks) are rejected with `400 Bad Request` to prevent host filesystem probing.
+- **Restrictive CORS Configuration**: Cross-Origin Resource Sharing is restricted to local addresses (`http://127.0.0.1:8000`, `http://localhost:8000`, or via `DONEPROOF_ALLOWED_ORIGINS`). `allow_credentials` is disabled (`False`), ensuring untrusted external websites cannot make credentialed requests or probe local task state.
 - **Untrusted Deployments**: If deployed over a network, the API must be gated behind an authenticating reverse proxy and executed inside an unprivileged container.
 
 ## How it works

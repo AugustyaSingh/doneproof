@@ -5,7 +5,7 @@ import unittest
 
 try:
     from fastapi.testclient import TestClient
-    from doneproof.api import app, get_workspace_root, validate_workspace_dir
+    from doneproof.api import app, get_workspace_root, validate_workspace_dir, get_allowed_origins
     FASTAPI_AVAILABLE = True
 except (ImportError, RuntimeError):
     FASTAPI_AVAILABLE = False
@@ -13,6 +13,7 @@ except (ImportError, RuntimeError):
     app = None
     get_workspace_root = None
     validate_workspace_dir = None
+    get_allowed_origins = None
 
 
 @unittest.skipUnless(FASTAPI_AVAILABLE, "fastapi or httpx is not installed")
@@ -259,6 +260,49 @@ class DoneProofApiTests(unittest.TestCase):
             with self.assertRaises(ValueError) as ctx:
                 validate_workspace_dir(root.parent, workspace_root=root)
             self.assertIn("outside the approved workspace root", str(ctx.exception))
+
+    def test_cors_allowed_local_origin(self):
+        response = self.client.get("/api/health", headers={"Origin": "http://127.0.0.1:8000"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("access-control-allow-origin"), "http://127.0.0.1:8000")
+        self.assertNotEqual(response.headers.get("access-control-allow-credentials"), "true")
+
+    def test_cors_disallowed_external_origin(self):
+        response = self.client.get("/api/health", headers={"Origin": "https://malicious-external-site.com"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.headers.get("access-control-allow-origin"))
+
+    def test_cors_preflight_allowed(self):
+        headers = {
+            "Origin": "http://localhost:8000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "Content-Type",
+        }
+        response = self.client.options("/verify", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("access-control-allow-origin"), "http://localhost:8000")
+        self.assertNotEqual(response.headers.get("access-control-allow-credentials"), "true")
+
+    def test_cors_preflight_disallowed(self):
+        headers = {
+            "Origin": "https://evil.example.com",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "Content-Type",
+        }
+        response = self.client.options("/verify", headers=headers)
+        self.assertNotEqual(response.headers.get("access-control-allow-origin"), "https://evil.example.com")
+
+    def test_get_allowed_origins_env_override(self):
+        orig_env = os.environ.get("DONEPROOF_ALLOWED_ORIGINS")
+        try:
+            os.environ["DONEPROOF_ALLOWED_ORIGINS"] = "http://app.local:3000, http://test.local:5000 "
+            origins = get_allowed_origins()
+            self.assertEqual(origins, ["http://app.local:3000", "http://test.local:5000"])
+        finally:
+            if orig_env is None:
+                os.environ.pop("DONEPROOF_ALLOWED_ORIGINS", None)
+            else:
+                os.environ["DONEPROOF_ALLOWED_ORIGINS"] = orig_env
 
 
 if __name__ == "__main__":

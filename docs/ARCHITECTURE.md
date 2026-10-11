@@ -25,4 +25,5 @@ The DoneProof REST API (`/verify`) is designed for trusted local developer envir
 1. **Workspace Boundary Enforcement:** The API verifies that any requested `base_dir` resolves strictly within the approved workspace root (`Path.cwd()` by default, or configured via `DONEPROOF_WORKSPACE_ROOT`).
 2. **Path Traversal Protection:** Relative directory traversal (`..`) and absolute paths outside the approved workspace root are rejected with `400 Bad Request`.
 3. **Symlink Canonicalization:** Paths are canonicalized via `Path.resolve()`, preventing symlinks pointing outside the workspace from bypassing boundary checks.
-4. **Network Deployments:** If exposed across a network, the API must be placed behind an authenticating gateway and run in an unprivileged container.
+4. **Hardened CORS Policy:** Cross-Origin Resource Sharing (CORS) is restricted to local origins (`http://127.0.0.1:8000`, `http://localhost:8000` by default, or configurable via `DONEPROOF_ALLOWED_ORIGINS`). `allow_credentials` is set to `False` because DoneProof is a local-first utility without browser cookie/session credentials, preventing cross-origin data exposure.
+5. **Network Deployments:** If exposed across a network, the API must be placed behind an authenticating gateway and run in an unprivileged container.
