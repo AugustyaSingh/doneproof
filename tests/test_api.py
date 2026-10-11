@@ -1,9 +1,16 @@
 import unittest
-from fastapi.testclient import TestClient
 
-from doneproof.api import app
+try:
+    from fastapi.testclient import TestClient
+    from doneproof.api import app
+    FASTAPI_AVAILABLE = True
+except (ImportError, RuntimeError):
+    FASTAPI_AVAILABLE = False
+    TestClient = None
+    app = None
 
 
+@unittest.skipUnless(FASTAPI_AVAILABLE, "fastapi or httpx is not installed")
 class DoneProofApiTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
