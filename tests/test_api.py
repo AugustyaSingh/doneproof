@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import io
+import os
 import subprocess
 import tempfile
 import unittest
@@ -26,6 +27,23 @@ class DoneProofAPITests(unittest.TestCase):
         self.assertEqual(health["service"], "doneproof")
         self.assertIsInstance(health["gemma_configured"], bool)
         self.assertTrue(health["gemma_model"])
+
+    def test_cors_middleware_is_local_only_and_disables_credentials(self):
+        cors = next(item for item in api.app.user_middleware if item.cls.__name__ == "CORSMiddleware")
+        self.assertIn("http://127.0.0.1:8000", cors.kwargs["allow_origins"])
+        self.assertIn("http://localhost:5173", cors.kwargs["allow_origins"])
+        self.assertFalse(cors.kwargs["allow_credentials"])
+
+    def test_cors_origins_can_be_configured(self):
+        with patch.dict(os.environ, {"DONEPROOF_ALLOWED_ORIGINS": "http://app.local:3000, http://test.local:5000"}):
+            self.assertEqual(api.get_allowed_origins(), ["http://app.local:3000", "http://test.local:5000"])
+
+    def test_legacy_workspace_helpers_preserve_the_boundary(self):
+        with patch.object(api, "workspace_root", return_value=self.root):
+            self.assertEqual(api.get_workspace_root(), self.root)
+            self.assertEqual(api.validate_workspace_dir(".", workspace_root=self.root), self.root)
+            with self.assertRaisesRegex(ValueError, "outside the approved workspace"):
+                api.validate_workspace_dir("..", workspace_root=self.root)
 
     def test_parse_contract_body_accepts_wrapper_and_direct_forms(self):
         task = {"task_id": "api-contract", "checks": []}

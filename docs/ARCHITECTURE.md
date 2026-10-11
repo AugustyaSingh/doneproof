@@ -38,6 +38,13 @@
 
 ## Safety boundary
 
+The API also restricts browser origins to local development origins by
+default. `DONEPROOF_ALLOWED_ORIGINS` can configure a comma-separated list.
+Workspace selection remains beneath `DONEPROOF_WORKSPACE_ROOT` (the server's
+current directory by default). This unauthenticated local API is not intended
+to be exposed directly to a network; a network deployment requires an
+authenticating gateway and an unprivileged isolated process.
+
 Never run arbitrary shell commands from an untrusted task specification. The
 built-in test check reads a supplied exit code; it never starts a process and
 does not authenticate where that result came from, so it cannot pass. Local

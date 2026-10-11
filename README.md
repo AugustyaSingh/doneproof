@@ -84,6 +84,17 @@ The Vite development server proxies `/verify` and `/api` to the local API.
 `pnpm build` compiles the React/TypeScript frontend into `doneproof/static`,
 which is served by the Python API.
 
+### API and deployment trust boundary
+
+The API is intended for a trusted local developer workflow. Verification and
+approved test-run requests are restricted to the configured workspace root
+(`DONEPROOF_WORKSPACE_ROOT`, or the server's current directory). Browser
+origins are limited to local development origins by default; configure
+`DONEPROOF_ALLOWED_ORIGINS` with a comma-separated list when Vite runs on a
+different local origin. Do not expose this unauthenticated development API to
+a network. A network deployment needs an authenticating gateway and an
+unprivileged isolated process.
+
 ## How it works
 
 1. A task contract lists checks for that task. Built-in checks inspect required

@@ -39,17 +39,39 @@ def workspace_root() -> Path:
     return Path(configured or Path.cwd()).resolve()
 
 
-def resolve_workspace(requested: str | Path = ".") -> Path:
+def get_workspace_root() -> Path:
+    """Compatibility name for integrations using the earlier API helper."""
+    return workspace_root()
+
+
+def resolve_workspace(requested: str | Path = ".", approved_root: str | Path | None = None) -> Path:
     if not isinstance(requested, (str, Path)):
         raise ValueError("base_dir must be a string path")
-    root = workspace_root()
+    root = Path(approved_root).resolve() if approved_root is not None else workspace_root()
     candidate = Path(requested)
     candidate = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
     if candidate != root and root not in candidate.parents:
-        raise ValueError("base_dir must resolve within the approved workspace root")
+        raise ValueError("Requested path is outside the approved workspace root")
     if candidate.exists() and not candidate.is_dir():
         raise ValueError("base_dir must point to a directory")
     return candidate
+
+
+def validate_workspace_dir(requested_dir: str | Path = ".", workspace_root: str | Path | None = None) -> Path:
+    """Backward-compatible name for the approved-root path validator."""
+    return resolve_workspace(requested_dir, approved_root=workspace_root)
+
+
+def get_allowed_origins() -> list[str]:
+    """Return configured browser origins or safe local defaults."""
+    configured = os.environ.get("DONEPROOF_ALLOWED_ORIGINS", "").strip()
+    if configured:
+        return [origin.strip() for origin in configured.split(",") if origin.strip()]
+    return [
+        "http://127.0.0.1:8000", "http://localhost:8000",
+        "http://127.0.0.1:8001", "http://localhost:8001",
+        "http://127.0.0.1:5173", "http://localhost:5173",
+    ]
 
 
 def _request_size_error(content_length: str | None = None, *, body_size: int = 0, limit: int = MAX_CONTRACT_BYTES) -> JSONResponse | None:
@@ -159,9 +181,7 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in os.environ.get(
-        "DONEPROOF_ALLOWED_ORIGINS", "http://127.0.0.1:5173,http://localhost:5173"
-    ).split(",") if origin.strip()],
+    allow_origins=get_allowed_origins(),
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type"],
@@ -170,7 +190,7 @@ app.add_middleware(
 
 @app.exception_handler(ValueError)
 async def value_error_handler(_request: Request, exc: ValueError) -> JSONResponse:
-    return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"detail": str(exc)})
+    return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"detail": str(exc), "error": str(exc)})
 
 
 @app.post("/verify")

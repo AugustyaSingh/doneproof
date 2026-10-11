@@ -1,0 +1,394 @@
+/* DoneProof — Slightly White Developer Tool Design System */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* Geist via CDN */
+@font-face {
+  font-family: 'Geist';
+  src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist';
+  src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist';
+  src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist';
+  src: url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/Geist-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ─── Design Tokens (Slightly White / Off-White Theme) ─── */
+:root {
+  /* Surface stack */
+  --surface:              #ffffff;
+  --surface-dim:          #f8f9fa;
+  --surface-l1:           #ffffff;
+  --surface-l2:           #f3f4f6;
+  --surface-l3:           #e5e7eb;
+
+  /* Borders */
+  --border-subtle:        #e5e7eb;
+  --border-prominent:     #d1d5db;
+
+  /* Text */
+  --text-primary:         #0f172a;
+  --text-secondary:       #475569;
+  --text-muted:           #64748b;
+
+  /* Status — strictly reserved for verification outcomes */
+  --status-verified:      #059669;
+  --status-verified-bg:   rgba(16, 185, 129, 0.09);
+  --status-verified-bdr:  rgba(16, 185, 129, 0.28);
+
+  --status-partial:       #d97706;
+  --status-partial-bg:    rgba(245, 158, 11, 0.09);
+  --status-partial-bdr:   rgba(245, 158, 11, 0.28);
+
+  --status-failed:        #dc2626;
+  --status-failed-bg:     rgba(239, 68, 68, 0.09);
+  --status-failed-bdr:    rgba(239, 68, 68, 0.28);
+
+  /* Radii */
+  --radius-sm:  0.25rem;   /* 4px  — buttons, badges, inputs */
+  --radius-md:  0.5rem;    /* 8px  — cards, panels */
+  --radius-lg:  0.75rem;   /* 12px — modals, code blocks */
+}
+
+/* ─── Global Reset ─── */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+body {
+  margin: 0;
+  font-family: 'Geist', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  letter-spacing: -0.005em;
+  color: var(--text-primary);
+  background: var(--surface-dim);
+}
+
+code, pre, .mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+::selection {
+  background: rgba(15, 23, 42, 0.12);
+  color: var(--text-primary);
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--surface-dim); }
+::-webkit-scrollbar-thumb { background: var(--border-prominent); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ─── Surface Cards ─── */
+.panel {
+  background: var(--surface-l1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.panel-recessed {
+  background: var(--surface-l2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+/* ─── Buttons ─── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 6px 14px;
+  font-family: 'Geist', sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 20px;
+  background: var(--text-primary);
+  color: #ffffff;
+  border: 1px solid var(--text-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: all 0.15s ease;
+}
+.btn-primary:hover { background: #1e293b; border-color: #1e293b; }
+.btn-primary:active { transform: scale(0.98); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 6px 14px;
+  font-family: 'Geist', sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 20px;
+  background: #ffffff;
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.btn-ghost:hover { background: var(--surface-l2); border-color: var(--border-prominent); }
+
+.kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--text-secondary);
+  background: var(--surface-l2);
+  border: 1px solid var(--border-prominent);
+  border-radius: 3px;
+}
+
+/* ─── Status Badges ─── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 14px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+.badge-verified {
+  color: var(--status-verified);
+  background: var(--status-verified-bg);
+  border: 1px solid var(--status-verified-bdr);
+}
+.badge-partial {
+  color: var(--status-partial);
+  background: var(--status-partial-bg);
+  border: 1px solid var(--status-partial-bdr);
+}
+.badge-failed {
+  color: var(--status-failed);
+  background: var(--status-failed-bg);
+  border: 1px solid var(--status-failed-bdr);
+}
+
+/* ─── Dropzone ─── */
+.dropzone {
+  border: 1px dashed var(--border-prominent);
+  background: var(--surface-l2);
+  border-radius: var(--radius-lg);
+  transition: border-color 0.2s ease, background 0.2s ease;
+  cursor: pointer;
+}
+.dropzone:hover,
+.dropzone.dragover {
+  border-color: var(--text-secondary);
+  background: var(--surface-l3);
+}
+
+/* ─── Table ─── */
+.evidence-table { width: 100%; border-collapse: collapse; }
+.evidence-table thead { background: var(--surface-l2); }
+.evidence-table th {
+  padding: 8px 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 500;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+}
+.evidence-table td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+.evidence-table tbody tr {
+  transition: background 0.1s ease;
+}
+.evidence-table tbody tr:hover {
+  background: var(--surface-l2);
+}
+
+/* ─── Loading Spinner — CLI ASCII style ─── */
+@keyframes ascii-rotate {
+  0%   { content: '/'; }
+  25%  { content: '—'; }
+  50%  { content: '\\'; }
+  75%  { content: '|'; }
+}
+
+.spinner-ascii::before {
+  content: '/';
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  animation: ascii-rotate 0.6s steps(4, end) infinite;
+}
+
+/* ─── Tab Buttons ─── */
+.tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-family: 'Geist', sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.tab-btn:hover { color: var(--text-primary); background: var(--surface-l2); }
+.tab-btn.active {
+  color: var(--text-primary);
+  background: var(--surface-l2);
+  border-color: var(--border-prominent);
+}
+
+/* ─── File Badge ─── */
+.file-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--surface-l2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+.file-badge .file-size { color: var(--text-muted); font-size: 11px; }
+
+/* ─── Telemetry / Metric Boxes ─── */
+.metric-box {
+  padding: 8px 12px;
+  text-align: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-l2);
+}
+.metric-box .metric-label {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.metric-box .metric-value {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ─── Claim vs Reality ─── */
+.claim-card {
+  padding: 16px;
+  background: var(--surface-l2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.claim-card-header {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.reality-card {
+  padding: 16px;
+  background: var(--surface-l2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--border-subtle);
+}
+.reality-card.status-verified-accent { border-left-color: var(--status-verified); }
+.reality-card.status-partial-accent  { border-left-color: var(--status-partial); }
+.reality-card.status-failed-accent   { border-left-color: var(--status-failed); }
+
+/* ─── Proof Attestation ─── */
+.attestation-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 4px 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.attestation-row:last-child {
+  border-bottom: none;
+}
+.attestation-row .att-key { color: var(--text-muted); }
+.attestation-row .att-val { color: var(--text-primary); text-align: right; }
+
+/* ─── Filter Buttons ─── */
+.filter-btn {
+  padding: 4px 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.filter-btn:hover { background: var(--surface-l2); color: var(--text-primary); }
+.filter-btn.active {
+  background: var(--surface-l2);
+  color: var(--text-primary);
+  border-color: var(--border-prominent);
+}
+
+/* ─── Utilities ─── */
+.text-mono { font-family: 'JetBrains Mono', monospace; }
+.text-geist { font-family: 'Geist', sans-serif; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hidden { display: none !important; }
