@@ -1,4 +1,4 @@
-"""FastAPI application for DoneProof verification dashboard and API."""
+import os
 from pathlib import Path
 from typing import Any
 import json
@@ -12,6 +12,65 @@ from doneproof.verifier import verify_task
 
 BASE_DIR = Path(__file__).parent.resolve()
 STATIC_DIR = BASE_DIR / "static"
+
+
+def get_workspace_root() -> Path:
+    """Return the approved workspace root directory.
+
+    Configurable via the DONEPROOF_WORKSPACE_ROOT environment variable.
+    Defaults to the current working directory where the server was started.
+    """
+    env_root = os.environ.get("DONEPROOF_WORKSPACE_ROOT")
+    if env_root and env_root.strip():
+        return Path(env_root).resolve()
+    return Path.cwd().resolve()
+
+
+def validate_workspace_dir(
+    requested_dir: str | Path = ".",
+    workspace_root: Path | str | None = None,
+) -> Path:
+    """Validate that the requested directory resolves within the approved workspace root.
+
+    Args:
+        requested_dir: The relative or absolute path requested by the client.
+        workspace_root: Optional override for the approved workspace root.
+            If None, defaults to get_workspace_root().
+
+    Returns:
+        The resolved Path within the approved workspace root.
+
+    Raises:
+        ValueError: If requested_dir is not a valid path string, resolves outside
+            the approved workspace root, or points to a file instead of a directory.
+    """
+    if not isinstance(requested_dir, (str, Path)):
+        raise ValueError("base_dir must be a string path")
+
+    root = (
+        Path(workspace_root).resolve()
+        if workspace_root is not None
+        else get_workspace_root()
+    )
+
+    req_path = Path(requested_dir)
+    if req_path.is_absolute():
+        candidate = req_path.resolve()
+    else:
+        candidate = (root / req_path).resolve()
+
+    if candidate != root and root not in candidate.parents:
+        raise ValueError(
+            f"Target directory '{requested_dir}' is outside the approved workspace root '{root}'"
+        )
+
+    if candidate.exists() and not candidate.is_dir():
+        raise ValueError(
+            f"Target path '{requested_dir}' is a file, not a directory"
+        )
+
+    return candidate
+
 
 app = FastAPI(
     title="DoneProof API",
@@ -48,6 +107,8 @@ async def verify_endpoint(request: Request) -> JSONResponse:
     1. A JSON object with a 'task' object and optional 'base_dir':
        {"task": {...}, "base_dir": "."}
     2. Or a direct task object containing 'task_id', etc.
+
+    Enforces that 'base_dir' resolves strictly within the approved workspace root.
     """
     try:
         body = await request.json()
@@ -63,17 +124,24 @@ async def verify_endpoint(request: Request) -> JSONResponse:
     # If the payload explicitly wraps 'task'
     if "task" in body:
         task = body.get("task")
-        base_dir = body.get("base_dir") or "."
+        raw_base_dir = body.get("base_dir")
     else:
         # Direct task payload
         task = body
-        base_dir = "."
+        raw_base_dir = body.get("base_dir")
 
     if not isinstance(task, dict):
         raise ValueError("task must be an object with a non-empty task_id")
 
+    # Default to current workspace directory if omitted
+    if raw_base_dir is None:
+        raw_base_dir = "."
+
+    # Enforce workspace boundary: ensures base_dir resolves strictly within approved workspace root
+    validated_dir = validate_workspace_dir(raw_base_dir)
+
     # verify_task handles validation of task and base_dir, raising ValueError on failure
-    result = verify_task(task, base_dir=base_dir)
+    result = verify_task(task, base_dir=validated_dir)
     return JSONResponse(content=result)
 
 

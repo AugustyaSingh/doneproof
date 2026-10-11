@@ -1,13 +1,18 @@
+import os
+from pathlib import Path
+import tempfile
 import unittest
 
 try:
     from fastapi.testclient import TestClient
-    from doneproof.api import app
+    from doneproof.api import app, get_workspace_root, validate_workspace_dir
     FASTAPI_AVAILABLE = True
 except (ImportError, RuntimeError):
     FASTAPI_AVAILABLE = False
     TestClient = None
     app = None
+    get_workspace_root = None
+    validate_workspace_dir = None
 
 
 @unittest.skipUnless(FASTAPI_AVAILABLE, "fastapi or httpx is not installed")
@@ -114,6 +119,146 @@ class DoneProofApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         data = response.json()
         self.assertIn("error", data)
+
+    def test_verify_outside_workspace_parent_traversal_returns_400(self):
+        payload = {
+            "task": {"task_id": "traversal-test", "required_files": ["README.md"]},
+            "base_dir": "..",
+        }
+        response = self.client.post("/verify", json=payload)
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertIn("outside the approved workspace root", data["detail"])
+
+    def test_verify_outside_workspace_nested_traversal_returns_400(self):
+        payload = {
+            "task": {"task_id": "traversal-test", "required_files": ["README.md"]},
+            "base_dir": "docs/../../..",
+        }
+        response = self.client.post("/verify", json=payload)
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertIn("outside the approved workspace root", data["detail"])
+
+    def test_verify_outside_workspace_absolute_path_returns_400(self):
+        ext_dir = "/etc" if os.path.exists("/etc") else "/var"
+        payload = {
+            "task": {"task_id": "external-probe", "required_files": ["passwd"]},
+            "base_dir": ext_dir,
+        }
+        response = self.client.post("/verify", json=payload)
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertIn("outside the approved workspace root", data["detail"])
+
+    def test_verify_direct_payload_with_forbidden_base_dir_returns_400(self):
+        payload = {
+            "task_id": "direct-forbidden",
+            "required_files": ["passwd"],
+            "base_dir": "..",
+        }
+        response = self.client.post("/verify", json=payload)
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertIn("outside the approved workspace root", data["detail"])
+
+    def test_verify_permitted_relative_subdirectory(self):
+        payload = {
+            "task": {
+                "task_id": "subdir-pass",
+                "required_files": ["api.py"],
+            },
+            "base_dir": "doneproof",
+        }
+        response = self.client.post("/verify", json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "VERIFIED")
+        self.assertEqual(data["checks"][0]["passed"], True)
+
+    def test_verify_permitted_absolute_path_inside_workspace(self):
+        abs_sub = str(Path.cwd().resolve() / "doneproof")
+        payload = {
+            "task": {
+                "task_id": "abs-pass",
+                "required_files": ["api.py"],
+            },
+            "base_dir": abs_sub,
+        }
+        response = self.client.post("/verify", json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "VERIFIED")
+
+    def test_verify_base_dir_pointing_to_file_returns_400(self):
+        payload = {
+            "task": {"task_id": "file-base-dir", "required_files": []},
+            "base_dir": "README.md",
+        }
+        response = self.client.post("/verify", json=payload)
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertIn("file, not a directory", data["detail"])
+
+    def test_verify_invalid_base_dir_type_returns_400(self):
+        payload = {
+            "task": {"task_id": "bad-type", "required_files": []},
+            "base_dir": 12345,
+        }
+        response = self.client.post("/verify", json=payload)
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertIn("base_dir must be a string path", data["detail"])
+
+    def test_custom_workspace_root_via_env_var(self):
+        with tempfile.TemporaryDirectory() as custom_root:
+            Path(custom_root, "evidence.txt").write_text("ok", encoding="utf-8")
+            orig_env = os.environ.get("DONEPROOF_WORKSPACE_ROOT")
+            os.environ["DONEPROOF_WORKSPACE_ROOT"] = custom_root
+            try:
+                # Inside custom root is permitted
+                payload_valid = {
+                    "task": {"task_id": "custom-ok", "required_files": ["evidence.txt"]},
+                    "base_dir": ".",
+                }
+                res_valid = self.client.post("/verify", json=payload_valid)
+                self.assertEqual(res_valid.status_code, 200)
+                self.assertEqual(res_valid.json()["status"], "VERIFIED")
+
+                # Outside custom root is rejected
+                res_outside = self.client.post(
+                    "/verify",
+                    json={"task": {"task_id": "custom-fail"}, "base_dir": ".."},
+                )
+                self.assertEqual(res_outside.status_code, 400)
+            finally:
+                if orig_env is None:
+                    os.environ.pop("DONEPROOF_WORKSPACE_ROOT", None)
+                else:
+                    os.environ["DONEPROOF_WORKSPACE_ROOT"] = orig_env
+
+    def test_validate_workspace_dir_helper_unit_tests(self):
+        with tempfile.TemporaryDirectory() as root_str:
+            root = Path(root_str).resolve()
+            sub = root / "sub"
+            sub.mkdir()
+
+            # Root itself is valid
+            self.assertEqual(validate_workspace_dir(".", workspace_root=root), root)
+            self.assertEqual(validate_workspace_dir(root_str, workspace_root=root), root)
+
+            # Subdirectory is valid
+            self.assertEqual(validate_workspace_dir("sub", workspace_root=root), sub)
+            self.assertEqual(validate_workspace_dir(str(sub), workspace_root=root), sub)
+
+            # Traversal is rejected
+            with self.assertRaises(ValueError) as ctx:
+                validate_workspace_dir("..", workspace_root=root)
+            self.assertIn("outside the approved workspace root", str(ctx.exception))
+
+            with self.assertRaises(ValueError) as ctx:
+                validate_workspace_dir(root.parent, workspace_root=root)
+            self.assertIn("outside the approved workspace root", str(ctx.exception))
 
 
 if __name__ == "__main__":
