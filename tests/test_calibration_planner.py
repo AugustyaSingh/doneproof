@@ -2,11 +2,12 @@ import json
 import unittest
 from unittest.mock import Mock
 
-from doneproof.gemma_planner import suggest_calibration_plan
+from doneproof.gemma_planner import CALIBRATION_PLAN_SCHEMA_VERSION, suggest_calibration_plan
 from doneproof.login_fixture import FIXTURE_ID, SCENARIOS
 
 
 VALID_PLAN = {
+    "schema_version": CALIBRATION_PLAN_SCHEMA_VERSION,
     "task_summary": "Verify login behavior",
     "checks": [
         {
@@ -106,6 +107,16 @@ class CalibrationPlannerTests(unittest.TestCase):
         )
 
         self.assertNotIn("passed", result["checks"][0])
+
+    def test_live_artifact_can_retain_model_output_and_invalid_output(self):
+        result = suggest_calibration_plan(
+            "Verify login behavior", client=mock_client(json.dumps(VALID_PLAN)), include_raw_output=True,
+        )
+        self.assertEqual(result["schema_version"], CALIBRATION_PLAN_SCHEMA_VERSION)
+        self.assertEqual(json.loads(result["generation"]["raw_output"]), VALID_PLAN)
+        with self.assertRaises(ValueError) as raised:
+            suggest_calibration_plan("Verify login behavior", client=mock_client("not json"), include_raw_output=True)
+        self.assertEqual(raised.exception.raw_output, "not json")
 
     def test_prompt_includes_only_the_supported_fixture_catalog(self):
         client = mock_client(json.dumps(VALID_PLAN))

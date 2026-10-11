@@ -1,2 +1,2 @@
 # Install in addition to the standard-library prototype dependencies.
-google-genai>=1.0.0
+google-genai>=1.30,<2
