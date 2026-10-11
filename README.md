@@ -95,6 +95,44 @@ different local origin. Do not expose this unauthenticated development API to
 a network. A network deployment needs an authenticating gateway and an
 unprivileged isolated process.
 
+#### Controlled Vercel presentation
+
+The repository includes a Vercel FastAPI entrypoint and builds the React UI
+before deployment. The hosted demo is intentionally scoped to the repository
+snapshot included in that deployment; it cannot inspect a visitor's computer
+or arbitrary GitHub repositories. The verification and approved test-run APIs
+are gated by an eight-hour, HTTP-only, secure demo session. If the password is
+not configured, those APIs fail closed. Gemma planning uses the server-side
+`GEMINI_API_KEY` and is available only after the same login.
+
+In Vercel, import this repository with root directory `./` and use the
+**FastAPI** framework preset (the React interface is built into FastAPI's
+static directory; do not deploy it as a frontend-only Vite project). The
+repository config runs `pnpm build` before packaging the FastAPI function. Add these under
+**Settings → Environment Variables** for Production (and Preview if used):
+
+| Name | Value |
+| --- | --- |
+| `GEMINI_API_KEY` | Your private Google AI API key (enter it in Vercel only) |
+| `DONEPROOF_DEMO_PASSWORD` | A strong presenter password to share only with invited judges |
+
+Generate a password locally with `python -c "import secrets; print(secrets.token_urlsafe(24))"`.
+Never use a `VITE_` prefix for either secret. Redeploy after adding variables.
+Vercel's configured build command is `pnpm build`; the app includes the Python
+dependencies from `requirements.txt`. Then open the deployment URL, enter the
+presenter password, choose the bundled `sample-fix` example, and run it. To
+show Gemma, request a plan for a task against the bundled DoneProof repository.
+The runner can start the fixed Python unittest command explicitly; on Vercel
+this executes in the short-lived server function against the deployed source
+bundle, not against your laptop. Test-process evidence remains separate from
+individual criterion results.
+
+This is a controlled presentation deployment, not a multi-user hosted service:
+everyone who knows the shared password uses the same bundled source and the
+server owner's Gemma quota. It does not provide per-user accounts, rate limits,
+or isolated arbitrary repository execution. Disable or rotate the password and
+Gemma key after the event if the URL has been shared widely.
+
 ## How it works
 
 1. A task contract lists checks for that task. Built-in checks inspect required

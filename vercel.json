@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "fastapi",
+  "buildCommand": "pnpm build",
+  "functions": {
+    "index.py": {
+      "maxDuration": 300,
+      "includeFiles": ["doneproof/**", "examples/**", "tests/**", "requirements*.txt"]
+    }
+  }
+}

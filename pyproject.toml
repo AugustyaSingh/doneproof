@@ -1,0 +1,2 @@
+[tool.vercel.fastapi.static]
+cdn = true

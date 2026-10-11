@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 import json
+import hmac
+import hashlib
 import subprocess
 import sys
 import time
@@ -22,6 +24,9 @@ MAX_CONTRACT_BYTES = 1024 * 1024
 MAX_PLAN_REQUEST_BYTES = 64 * 1024
 MAX_APPROVED_CHECK_SECONDS = 60
 MAX_APPROVED_CHECK_OUTPUT = 12000
+DEMO_COOKIE = "doneproof_demo"
+DEMO_SESSION_SECONDS = 8 * 60 * 60
+PROTECTED_PATHS = {"/verify", "/api/run-check", "/api/plan", "/api/approved-checks"}
 
 # Server-owned presets only. Request data never supplies an executable or args.
 APPROVED_CHECKS = {
@@ -36,7 +41,32 @@ APPROVED_CHECKS = {
 
 def workspace_root() -> Path:
     configured = os.environ.get("DONEPROOF_WORKSPACE_ROOT", "").strip()
-    return Path(configured or Path.cwd()).resolve()
+    default = Path(__file__).resolve().parent.parent if os.environ.get("VERCEL") else Path.cwd()
+    return Path(configured or default).resolve()
+
+
+def _demo_secret() -> str:
+    return os.environ.get("DONEPROOF_DEMO_PASSWORD", "")
+
+
+def _demo_token() -> str | None:
+    secret = _demo_secret()
+    if not secret:
+        return None
+    expires = str(int(time.time()) + DEMO_SESSION_SECONDS)
+    signature = hmac.new(secret.encode(), expires.encode(), hashlib.sha256).hexdigest()
+    return f"{expires}.{signature}"
+
+
+def _valid_demo_token(token: str | None) -> bool:
+    secret = _demo_secret()
+    if not secret or not token or "." not in token:
+        return False
+    expires, signature = token.split(".", 1)
+    if not expires.isdigit() or int(expires) < int(time.time()):
+        return False
+    expected = hmac.new(secret.encode(), expires.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature, expected)
 
 
 def get_workspace_root() -> Path:
@@ -186,6 +216,60 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
+
+
+@app.middleware("http")
+async def protect_controlled_demo(request: Request, call_next):
+    if request.url.path in PROTECTED_PATHS and os.environ.get("VERCEL"):
+        if not _demo_secret():
+            return JSONResponse(status_code=503, content={"detail": "Demo access is not configured on this deployment."})
+        if not _valid_demo_token(request.cookies.get(DEMO_COOKIE)):
+            return JSONResponse(status_code=401, content={"detail": "Enter the demo password to continue."})
+    return await call_next(request)
+
+
+@app.get("/api/demo/session")
+def demo_session(request: Request) -> dict[str, bool]:
+    required = bool(os.environ.get("VERCEL"))
+    return {"required": required, "configured": bool(_demo_secret()) if required else True,
+            "authenticated": _valid_demo_token(request.cookies.get(DEMO_COOKIE)) if required else True}
+
+
+@app.post("/api/demo/login")
+async def demo_login(request: Request) -> Response:
+    if not os.environ.get("VERCEL"):
+        return JSONResponse({"detail": "Demo login is only enabled on the hosted demo."}, status_code=400)
+    secret = _demo_secret()
+    if not secret:
+        return JSONResponse({"detail": "Demo access is not configured on this deployment."}, status_code=503)
+    size_error = _request_size_error(request.headers.get("content-length"), limit=4096)
+    if size_error:
+        return size_error
+    payload = bytearray()
+    async for chunk in request.stream():
+        size_error = _request_size_error(body_size=len(payload) + len(chunk), limit=4096)
+        if size_error:
+            return size_error
+        payload.extend(chunk)
+    try:
+        body = json.loads(payload)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        body = None
+    password = body.get("password") if isinstance(body, dict) else None
+    if not isinstance(password, str) or not hmac.compare_digest(password, secret):
+        return JSONResponse({"detail": "That demo password is not correct."}, status_code=401)
+    response = JSONResponse({"authenticated": True})
+    response.set_cookie(DEMO_COOKIE, _demo_token(), max_age=DEMO_SESSION_SECONDS, httponly=True,
+                        secure=True, samesite="lax", path="/")
+    return response
+
+
+@app.post("/api/demo/logout")
+def demo_logout() -> Response:
+    response = JSONResponse({"authenticated": False})
+    response.delete_cookie(DEMO_COOKIE, path="/", secure=bool(os.environ.get("VERCEL")),
+                           httponly=True, samesite="lax")
+    return response
 
 
 @app.exception_handler(ValueError)

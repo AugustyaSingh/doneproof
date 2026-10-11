@@ -28,6 +28,15 @@ class DoneProofAPITests(unittest.TestCase):
         self.assertIsInstance(health["gemma_configured"], bool)
         self.assertTrue(health["gemma_model"])
 
+    def test_controlled_demo_session_tokens_expire_and_require_signature(self):
+        with patch.dict(os.environ, {"DONEPROOF_DEMO_PASSWORD": "test-presenter-password"}, clear=True):
+            token = api._demo_token()
+            self.assertTrue(api._valid_demo_token(token))
+            self.assertFalse(api._valid_demo_token(token + "bad"))
+            with patch.object(api.time, "time", return_value=10**12):
+                self.assertFalse(api._valid_demo_token(token))
+
+
     def test_cors_middleware_is_local_only_and_disables_credentials(self):
         cors = next(item for item in api.app.user_middleware if item.cls.__name__ == "CORSMiddleware")
         self.assertIn("http://127.0.0.1:8000", cors.kwargs["allow_origins"])

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { DragEvent, KeyboardEvent, ReactNode } from 'react'
+import type { DragEvent, FormEvent, KeyboardEvent, ReactNode } from 'react'
 import './editorial.css'
 import { ProductOverviewDetails, ProductPage } from './ProductPages'
 import {
@@ -135,6 +135,10 @@ export default function App() {
   const [coverageRequirements, setCoverageRequirements] = useState('')
   const [coverageMapping, setCoverageMapping] = useState<Record<string, string>>({})
   const [menuOpen, setMenuOpen] = useState(false)
+  const [demoSession, setDemoSession] = useState<{ required: boolean; configured: boolean; authenticated: boolean } | null>(null)
+  const [demoPassword, setDemoPassword] = useState('')
+  const [demoLoginError, setDemoLoginError] = useState('')
+  const [demoLoginBusy, setDemoLoginBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const contextFilesRef = useRef<HTMLInputElement>(null)
   function setPage(next: Page) {
@@ -193,6 +197,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!demoSession || (demoSession.required && !demoSession.authenticated)) return
     let active = true
     const query = new URLSearchParams({ base_dir: workspace.trim() || '.' })
     setApprovedChecksState('loading')
@@ -210,13 +215,30 @@ export default function App() {
       setApprovedChecksState('unavailable')
     })
     return () => { active = false }
-  }, [workspace, approvedChecksRetry])
+  }, [workspace, approvedChecksRetry, demoSession?.authenticated, demoSession?.required])
 
   useEffect(() => {
     const syncPage = () => setPageState(pageFromLocation())
     window.addEventListener('hashchange', syncPage)
     return () => window.removeEventListener('hashchange', syncPage)
   }, [])
+
+  useEffect(() => {
+    fetch('/api/demo/session').then(response => response.ok ? response.json() : Promise.reject())
+      .then(session => setDemoSession(session)).catch(() => setDemoSession({ required: true, configured: false, authenticated: false }))
+  }, [])
+
+  async function loginToDemo(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setDemoLoginError(''); setDemoLoginBusy(true)
+    try {
+      const response = await fetch('/api/demo/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: demoPassword }) })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.detail || 'Could not open the demo.')
+      const session = await fetch('/api/demo/session').then(result => result.json())
+      setDemoSession(session); setDemoPassword('')
+    } catch (cause) { setDemoLoginError(cause instanceof Error ? cause.message : 'Could not open the demo.') }
+    finally { setDemoLoginBusy(false) }
+  }
 
   async function runVerification() {
     setError('')
@@ -340,6 +362,9 @@ export default function App() {
     // Let the browser begin consuming the blob before releasing its object URL.
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
+
+  if (!demoSession) return <div className="demo-gate"><section className="demo-gate-card"><ShieldCheck size={27} /><p className="panel-kicker">DONEPROOF · CONTROLLED DEMO</p><h1>Preparing the demo…</h1></section></div>
+  if (demoSession.required && (!demoSession.configured || !demoSession.authenticated)) return <div className="demo-gate"><section className="demo-gate-card"><ShieldCheck size={27} /><p className="panel-kicker">DONEPROOF · CONTROLLED DEMO</p><h1>{demoSession.configured ? 'Welcome to DoneProof.' : 'Demo access is not ready.'}</h1><p>{demoSession.configured ? 'Enter the presenter-provided password to open this private demonstration.' : 'The deployment owner needs to set DONEPROOF_DEMO_PASSWORD in Vercel, then redeploy.'}</p>{demoSession.configured && <form onSubmit={loginToDemo}><label htmlFor="demo-password">DEMO PASSWORD</label><input id="demo-password" type="password" autoComplete="current-password" value={demoPassword} onChange={event => setDemoPassword(event.target.value)} required autoFocus /><button className="ed-button ed-button-dark" disabled={demoLoginBusy}>{demoLoginBusy ? <LoaderCircle className="spin" size={16} /> : <ArrowRight size={16} />}{demoLoginBusy ? 'Opening…' : 'Open demo'}</button>{demoLoginError && <p role="alert" className="demo-gate-error">{demoLoginError}</p>}</form>}<small>The verification workspace is the repository bundled with this deployment.</small></section></div>
 
   if (page === 'how-it-works' || page === 'examples' || page === 'documentation') return <ProductPage page={page} health={health} samples={samples} runs={runs} onNavigate={setPage} onLoadSample={loadSample} />
 
