@@ -5,7 +5,7 @@
   "functions": {
     "index.py": {
       "maxDuration": 300,
-      "includeFiles": ["doneproof/**", "examples/**", "tests/**", "requirements*.txt"]
+      "includeFiles": "{doneproof/**,examples/**,tests/**,requirements*.txt}"
     }
   }
 }
