@@ -1,0 +1,248 @@
+import os
+from pathlib import Path
+from typing import Any
+import json
+
+from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+
+from doneproof.verifier import verify_task
+
+BASE_DIR = Path(__file__).parent.resolve()
+STATIC_DIR = BASE_DIR / "static"
+
+
+def get_workspace_root() -> Path:
+    """Return the approved workspace root directory.
+
+    Configurable via the DONEPROOF_WORKSPACE_ROOT environment variable.
+    Defaults to the current working directory where the server was started.
+    """
+    env_root = os.environ.get("DONEPROOF_WORKSPACE_ROOT")
+    if env_root and env_root.strip():
+        return Path(env_root).resolve()
+    return Path.cwd().resolve()
+
+
+def validate_workspace_dir(
+    requested_dir: str | Path = ".",
+    workspace_root: Path | str | None = None,
+) -> Path:
+    """Validate that the requested directory resolves within the approved workspace root.
+
+    Args:
+        requested_dir: The relative or absolute path requested by the client.
+        workspace_root: Optional override for the approved workspace root.
+            If None, defaults to get_workspace_root().
+
+    Returns:
+        The resolved Path within the approved workspace root.
+
+    Raises:
+        ValueError: If requested_dir is not a valid path string, resolves outside
+            the approved workspace root, or points to a file instead of a directory.
+    """
+    if not isinstance(requested_dir, (str, Path)):
+        raise ValueError("base_dir must be a string path")
+
+    root = (
+        Path(workspace_root).resolve()
+        if workspace_root is not None
+        else get_workspace_root()
+    )
+
+    req_path = Path(requested_dir)
+    if req_path.is_absolute():
+        candidate = req_path.resolve()
+    else:
+        candidate = (root / req_path).resolve()
+
+    if candidate != root and root not in candidate.parents:
+        raise ValueError(
+            f"Target directory '{requested_dir}' is outside the approved workspace root '{root}'"
+        )
+
+    if candidate.exists() and not candidate.is_dir():
+        raise ValueError(
+            f"Target path '{requested_dir}' is a file, not a directory"
+        )
+
+    return candidate
+
+
+def get_allowed_origins() -> list[str]:
+    """Return the list of allowed CORS origins.
+
+    Defaults to safe local development origins (http://127.0.0.1:8000, http://localhost:8000).
+    Can be configured via the DONEPROOF_ALLOWED_ORIGINS environment variable
+    (comma-separated list, e.g. 'http://localhost:3000,http://127.0.0.1:3000').
+    """
+    raw = os.environ.get("DONEPROOF_ALLOWED_ORIGINS")
+    if raw and raw.strip():
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return [
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+    ]
+
+
+app = FastAPI(
+    title="DoneProof API",
+    description="Evidence-based verification API for AI agent task completion contracts",
+    version="0.1.0",
+)
+
+# Phase 1: Hardened CORS Configuration
+# Credentials disabled (allow_credentials=False) as DoneProof is local-only and does not use cookies/sessions.
+# Origins restricted to local addresses by default to prevent cross-origin probing from external web pages.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_allowed_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
+)
+
+
+# Phase 1: Global Exception Handler for ValueError
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
+    """Return 400 Bad Request with a clear message when verifier raises ValueError."""
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"detail": str(exc), "error": str(exc)},
+    )
+
+
+# Phase 1: Verification Endpoint
+@app.post("/verify")
+async def verify_endpoint(request: Request) -> JSONResponse:
+    """Verify a task contract.
+
+    Accepts:
+    1. A JSON object with a 'task' object and optional 'base_dir':
+       {"task": {...}, "base_dir": "."}
+    2. Or a direct task object containing 'task_id', etc.
+
+    Enforces that 'base_dir' resolves strictly within the approved workspace root.
+    """
+    try:
+        body = await request.json()
+    except Exception as exc:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"detail": f"Invalid JSON payload: {exc}", "error": "Invalid JSON"},
+        )
+
+    if not isinstance(body, dict):
+        raise ValueError("Request body must be a JSON object")
+
+    # If the payload explicitly wraps 'task'
+    if "task" in body:
+        task = body.get("task")
+        raw_base_dir = body.get("base_dir")
+    else:
+        # Direct task payload
+        task = body
+        raw_base_dir = body.get("base_dir")
+
+    if not isinstance(task, dict):
+        raise ValueError("task must be an object with a non-empty task_id")
+
+    # Default to current workspace directory if omitted
+    if raw_base_dir is None:
+        raw_base_dir = "."
+
+    # Enforce workspace boundary: ensures base_dir resolves strictly within approved workspace root
+    validated_dir = validate_workspace_dir(raw_base_dir)
+
+    # verify_task handles validation of task and base_dir, raising ValueError on failure
+    result = verify_task(task, base_dir=validated_dir)
+    return JSONResponse(content=result)
+
+
+@app.get("/api/health")
+async def health_check() -> dict[str, str]:
+    """Health check endpoint."""
+    return {"status": "ok", "service": "doneproof"}
+
+
+@app.get("/api/samples")
+async def get_sample_tasks() -> dict[str, Any]:
+    """Provide built-in sample task contracts for quick UI testing."""
+    return {
+        "pass": {
+            "task_id": "pass-task-verified",
+            "agent_claim": "All requested files exist and core test suites succeeded.",
+            "required_files": ["README.md", "doneproof/verifier.py"],
+            "command_results": [
+                {
+                    "label": "unit test suite",
+                    "exit_code": 0,
+                    "summary": "Ran 14 tests in 0.003s. All tests passed.",
+                }
+            ],
+        },
+        "partial": {
+            "task_id": "sample-fix",
+            "agent_claim": "All tests pass and the fix is complete.",
+            "required_files": [
+                "README.md",
+                "doneproof/verifier.py",
+                "missing_expected_test.py",
+            ],
+            "command_results": [
+                {
+                    "label": "unit tests",
+                    "exit_code": 1,
+                    "summary": "2 passed, 1 failed: regression test did not pass",
+                }
+            ],
+        },
+        "fail": {
+            "task_id": "fail-task-unmet",
+            "agent_claim": "Delivered all features and verified test pass.",
+            "required_files": [
+                "non_existent_module.py",
+                "missing_output_artifact.json",
+            ],
+            "command_results": [
+                {
+                    "label": "integration tests",
+                    "exit_code": 2,
+                    "summary": "Fatal error: tests crashed with exit code 2.",
+                }
+            ],
+        },
+    }
+
+
+# Phase 2 & 3: Serve Web Dashboard
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/", response_model=None)
+async def serve_index() -> Response:
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(str(index_path))
+    return JSONResponse(
+        content={
+            "message": "DoneProof API is active. Web dashboard files not found in static directory.",
+            "docs": "/docs",
+        }
+    )
+
+
+def run() -> None:
+    """Run server via uvicorn programmatically."""
+    import uvicorn
+
+    uvicorn.run("doneproof.api:app", host="127.0.0.1", port=8000, reload=True)
+
+
+if __name__ == "__main__":
+    run()
