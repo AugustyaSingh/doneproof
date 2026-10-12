@@ -1,0 +1,27 @@
+{
+  "task_id": "artifact-review",
+  "task_description": "Check that the demo's sample contract is valid JSON and that the project documentation is present. Flag the human judgment that still needs review.",
+  "agent_claim": "The demo artifact is ready and its security explanation is accurate.",
+  "checks": [
+    {
+      "id": "sample-contract-is-valid-json",
+      "kind": "json_valid",
+      "path": "examples/sample_task.json",
+      "description": "The shipped sample contract parses as JSON.",
+      "expected_outcome": "The file exists and contains valid JSON."
+    },
+    {
+      "id": "demo-guide-is-present",
+      "kind": "required_file",
+      "path": "docs/HACKATHON_DEMO.md",
+      "description": "The demo walkthrough is included in the repository.",
+      "expected_outcome": "The documentation file exists."
+    },
+    {
+      "id": "security-claim-review",
+      "kind": "manual_review",
+      "description": "A reviewer checks that the security explanation matches the implementation.",
+      "expected_outcome": "A human reviewer confirms the claim against the code."
+    }
+  ]
+}

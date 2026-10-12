@@ -1,0 +1,21 @@
+{
+  "task_id": "workspace-boundary",
+  "task_description": "Confirm that a normal repository file can be observed and that a check pointing outside the selected workspace is rejected.",
+  "agent_claim": "The verifier keeps every path check inside the selected workspace.",
+  "checks": [
+    {
+      "id": "readme-inside-workspace",
+      "kind": "required_file",
+      "path": "README.md",
+      "description": "A normal in-workspace file can be checked.",
+      "expected_outcome": "README.md exists beneath the selected workspace."
+    },
+    {
+      "id": "outside-path-is-rejected",
+      "kind": "required_file",
+      "path": "../doneproof-outside-workspace-demo.txt",
+      "description": "A repository-relative check cannot escape the selected workspace.",
+      "expected_outcome": "The verifier rejects the path and never reads outside the workspace."
+    }
+  ]
+}

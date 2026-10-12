@@ -44,6 +44,25 @@ was inspected.”
    Show its observed exit code and captured output. This separate project-level
    result does not change per-criterion statuses or prove each task requirement.
 
+### Optional judge examples
+
+The runner's example cards are loaded from the API, which reads JSON contracts
+from `examples/`. They are useful as short alternate walkthroughs after the
+main `sample-fix` demonstration:
+
+- **`artifact-review`** checks actual JSON syntax and a required documentation
+  path. It also includes a human review criterion, which remains unsupported
+  until a reviewer or trusted evaluator supplies evidence. The agent claim in
+  the contract is context, not a result.
+- **`workspace-boundary`** checks one real in-workspace path and one path that
+  attempts to leave the selected workspace. The second result should be
+  **failed** with path-rejection evidence; the verifier must not open that
+  outside path.
+
+Load and run these examples during the presentation to show JSON validation,
+unsupported human judgment, and workspace confinement. Their results are
+collected at run time; loading an example never pre-populates a receipt.
+
 ### 1:35–2:00 — Close
 
 “The key design decision is the boundary: Gemma helps interpret open-ended
